@@ -9,14 +9,14 @@
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
         .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .viewport { position: relative; border-bottom: 1px solid #222; display: flex; flex-wrap: wrap; gap: 20px; padding: 40px; align-content: flex-start; overflow-y: auto; }
+        .viewport { position: relative; background: #080808; display: flex; flex-wrap: wrap; gap: 20px; padding: 40px; align-content: flex-start; overflow-y: auto; }
         .console { background: #000; padding: 20px; color: #666; font-size: 11px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); line-height: 1.5; }
         .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
-        .project-node { width: 300px; border: 1px solid var(--glow); background: #000; padding: 20px; position: relative; box-shadow: 0 0 15px rgba(0,255,65,0.1); flex-shrink: 0; height: fit-content; }
-        .open-btn { display: block; background: var(--glow); color: #000; text-align: center; padding: 12px; text-decoration: none; font-weight: bold; margin-top: 15px; font-size: 14px; }
-        .open-btn:hover { opacity: 0.8; }
+        .project-node { width: 300px; border: 1px solid var(--glow); background: #000; padding: 20px; position: relative; box-shadow: 0 0 15px rgba(0,255,65,0.1); height: fit-content; }
+        .open-btn { display: block; background: var(--glow); color: #000; text-align: center; padding: 12px; text-decoration: none; font-weight: bold; margin-top: 15px; }
+        .destroy-btn { display: block; background: transparent; border: 1px solid #ff4444; color: #ff4444; text-align: center; padding: 8px; text-decoration: none; font-size: 10px; margin-top: 10px; cursor: pointer; }
+        .destroy-btn:hover { background: #ff4444; color: #000; }
         input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; }
-        input:focus { border-color: var(--glow); }
         button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; }
     </style>
@@ -25,7 +25,6 @@
     <div id='wizard' class='setup-wizard'>
         <div style='max-width: 400px; text-align: center;'>
             <h1 style='letter-spacing: 5px;'>SYSTEM_AUTH</h1>
-            <p style='opacity: 0.5; font-size: 12px; margin-bottom: 20px;'>Enter your Ngrok or VPS Tunnel URL</p>
             <input type='text' id='vpsIp' placeholder='https://...ngrok-free.dev'>
             <button onclick='syncBackend()'>INITIATE_LINK</button>
         </div>
@@ -42,7 +41,7 @@
                 <input type='password' id='githubToken' placeholder='GITHUB_PAT (Optional)'>
                 <button id='coldStartBtn' onclick='executeColdStart()'>EXECUTE_COLD_START</button>
             </div>
-            <div id='active-list' style='font-size: 12px; opacity: 0.5;'>SCANNING_ACTIVE_PROJECTS...</div>
+            <div id='active-list' style='opacity: 0.5;'>SCANNING_ACTIVE_PROJECTS...</div>
             <button style='opacity:0.3; font-size:10px;' onclick='localStorage.clear(); location.reload();'>HARD_RESET</button>
         </div>
         <div class='viewport' id='graph'></div>
@@ -57,7 +56,6 @@
         };
 
         function addProjectCard(name, port) {
-            if (!port || port === 'PENDING') return; 
             const base = localStorage.getItem('at_base');
             const cleanBase = base.replace('https://', '').replace('http://', '').split(':')[0];
             const appUrl = `${window.location.protocol}//${cleanBase.split('/')[0]}:${port}`;
@@ -74,8 +72,21 @@
                 <div style='font-size: 10px; color: #00ff41;'>● STATUS: RUNNING</div>
                 <div style='font-size: 10px; opacity: 0.5; margin-top:5px;'>VIRTUAL_PORT: ${port}</div>
                 <a href='${appUrl}' target='_blank' class='open-btn'>OPEN_INTERFACE</a>
+                <div class='destroy-btn' onclick="destroyProject('${name}')">DESTROY_INSTANCE</div>
             `;
             document.getElementById('graph').appendChild(div);
+        }
+
+        async function destroyProject(name) {
+            if(!confirm(`WARNING: PURGE HARDWARE CACHE FOR ${name}?`)) return;
+            const base = localStorage.getItem('at_base');
+            await fetch(`${base}/api/destroy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ repoName: name })
+            });
+            document.getElementById(`card-${name}`).remove();
+            log(`PURGED: ${name}`);
         }
 
         function initSocket(url) {
@@ -90,10 +101,8 @@
                 const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
                 const apps = await res.json();
                 document.getElementById('active-list').innerText = `ACTIVE_CONTAINERS: ${apps.length}`;
-                apps.forEach(app => {
-                    if (app.port !== 'PENDING') addProjectCard(app.name, app.port);
-                });
-            } catch(e) { log('SYNC_ERROR: RECOVERY_FAILED'); }
+                apps.forEach(app => { if (app.port !== 'PENDING') addProjectCard(app.name, app.port); });
+            } catch (e) { log('SYNC_ERROR: RECOVERY_FAILED'); }
         }
 
         async function checkPulse() {
@@ -118,7 +127,7 @@
             log(`INITIATING_DEPLOYMENT: ${repo}`);
             try {
                 await fetch(`${base}/api/launch`, {
-                    method: 'POST',
+                    method: 'POST', 
                     headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
                     body: JSON.stringify({ cloneCommand: repo, githubToken: token })
                 });
