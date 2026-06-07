@@ -9,25 +9,39 @@ const docker = new Docker();
 const git = SimpleGit();
 const io = require('socket.io')(fastify.server, { cors: { origin: '*' } });
 
-// Aggressive CORS and Parsing
 fastify.register(require('@fastify/cors'), { origin: true });
 
-// THE HANDSHAKE FIX (Prevents 404)
-fastify.get('/', async (request, reply) => {
-    reply.code(200).send({ status: 'ONLINE', node: 'MYCIPHER_CORE' });
+fastify.get('/', async () => {
+    return { status: 'ONLINE', node: 'MYCIPHER_CORE' };
 });
 
-// The rest of your production logic
 fastify.get('/api/projects', async () => {
     const containers = await docker.listContainers({ all: true });
-    return containers
-        .filter(c => c.Names[0].startsWith('/app-'))
-        .map(c => ({
-            name: c.Names[0].replace('/app-', '').split('-')[0],
-            id: c.Id,
-            status: c.State,
-            port: c.Ports.find(p => p.PrivatePort === 3000 || p.PrivatePort === 8080)?.PublicPort || null
-        }));
+    return containers.map(c => ({
+        name: c.Names[0].replace('/', ''),
+        id: c.Id,
+        status: c.State,
+        port: c.Ports[0]?.PublicPort || null
+    }));
+});
+
+// REFINED PURGE LOGIC
+fastify.post('/api/destroy', async (req, reply) => {
+    const { repoName } = req.body;
+    const containers = await docker.listContainers({ all: true });
+    
+    for (const c of containers) {
+        if (c.Names[0].includes(repoName) || c.Image.includes(repoName)) {
+            const container = docker.getContainer(c.Id);
+            await container.stop().catch(() => {});
+            await container.remove().catch(() => {});
+        }
+    }
+    
+    const workDir = path.join(__dirname, 'tmp', repoName);
+    if (fs.existsSync(workDir)) fs.removeSync(workDir).catch(() => {});
+
+    return { status: 'PURGED', target: repoName };
 });
 
 fastify.post('/api/launch', async (req, reply) => {
@@ -40,26 +54,22 @@ fastify.post('/api/launch', async (req, reply) => {
     const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoMatch[1]}.git` : cloneCommand;
 
     process.nextTick(async () => {
-        const broadcast = (msg) => { io.emit('build_log', msg); };
         try {
             if (fs.existsSync(workDir)) fs.removeSync(workDir);
-            broadcast(`[STAGING] Cloning ${repoName}...`);
             await git.clone(repoUrl, workDir);
-            
             const dockerfile = getUniversalDockerfile(workDir);
             fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
             
             const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
-            docker.modem.followProgress(buildStream, async (err) => {
-                if (err) return broadcast(`[ERROR] Build Failed: ${err.message}`);
+            docker.modem.followProgress(buildStream, async () => {
                 const container = await docker.createContainer({
                     Image: repoName,
                     HostConfig: { PublishAllPorts: true }
                 });
                 await container.start();
-                broadcast('[SUCCESS] Project Live.');
+                io.emit('build_log', `[SUCCESS] ${repoName} is live.`);
             });
-        } catch (e) { broadcast(`[FATAL] ${e.message}`); }
+        } catch (e) { io.emit('build_log', `[ERROR] ${e.message}`); }
     });
     return { status: 'INITIATED' };
 });
