@@ -12,20 +12,21 @@
         .viewport { background: #000; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; padding: 40px; overflow-y: auto; position: relative; z-index: 5; }
         .console { background: #000; padding: 20px; color: #666; font-size: 11px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); line-height: 1.5; }
         .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
-        .project-node { border: 1px solid var(--glow); background: #080808; padding: 20px; box-shadow: 0 0 15px rgba(0,255,65,0.2); height: fit-content; display: block !important; }
+        .project-node { border: 1px solid var(--glow); background: #080808; padding: 20px; box-shadow: 0 0 15px rgba(0,255,65,0.2); height: fit-content; }
         .open-btn { display: block; background: var(--glow); color: #000; text-align: center; padding: 12px; text-decoration: none; font-weight: bold; margin-top: 15px; }
         .destroy-btn { display: block; border: 1px solid #ff4444; color: #ff4444; text-align: center; padding: 8px; text-decoration: none; font-size: 10px; margin-top: 10px; cursor: pointer; }
-        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        input { background: #000; border: 2px solid #333; color: var(--glow); padding: 15px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; font-size: 16px; }
+        button { background: var(--glow); color: #000; border: none; padding: 20px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 18px; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 1000; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
     <div id='wizard' class='setup-wizard'>
-        <div style='max-width: 400px; text-align: center;'>
-            <h1 style='letter-spacing: 5px;'>SYSTEM_AUTH</h1>
+        <div style='max-width: 500px; text-align: center; background: #080808; padding: 50px; border: 1px solid #222;'>
+            <h1 style='letter-spacing: 5px; margin-bottom: 30px;'>SYSTEM_AUTH</h1>
             <input type='text' id='vpsIp' placeholder='Ngrok URL (https://...ngrok-free.dev)'>
             <button onclick='syncBackend()'>INITIATE_LINK</button>
+            <p id='error-display' style='color: #ff4444; margin-top: 20px; font-size: 12px;'></p>
         </div>
     </div>
     <div class='grid-layout'>
@@ -37,7 +38,7 @@
             <div class='card'>
                 <h3>DEPLOY_NEW_INTERFACE</h3>
                 <input type='text' id='gitUrl' placeholder='REPOS_URL (.git)'>
-                <input type='password' id='githubToken' placeholder='GITHUB_PAT (Optional)'>
+                <input type='password' id='githubToken' placeholder='GITHUB_PAT'>
                 <button id='coldStartBtn' onclick='executeColdStart()'>EXECUTE_COLD_START</button>
             </div>
             <div id='active-list' style='font-size: 10px; opacity: 0.5;'>RE-SCANNING HARDWARE...</div>
@@ -57,35 +58,39 @@
         function addProjectCard(name, port) {
             const base = localStorage.getItem('at_base');
             const domain = base.replace('https://', '').replace('http://', '').split('/')[0];
-            const appUrl = `${window.location.protocol}//${domain.split(':')[0]}:${port}`;
+            const appUrl = `https://${domain.split(':')[0]}:${port}`;
             const cardId = `card-${name}`;
-            if(document.getElementById(cardId)) document.getElementById(cardId).remove();
             const div = document.createElement('div');
-            div.id = cardId;
-            div.className = 'project-node';
+            div.id = cardId; div.className = 'project-node';
             div.innerHTML = `
                 <div style='font-size: 10px; opacity: 0.5;'>IDENTIFIER</div>
                 <div style='font-size: 20px; font-weight: bold; margin-bottom: 10px; color: #00ff41;'>${name.toUpperCase()}</div>
                 <div style='font-size: 10px; color: #00ff41;'>● STATUS: LIVE</div>
                 <div style='font-size: 10px; opacity: 0.5; margin-top:5px;'>PORT: ${port}</div>
-                <a href='${appUrl}' target='_blank' class='open-btn' headers='{"ngrok-skip-browser-warning":"true"}'>OPEN_INTERFACE</a>
+                <a href='${appUrl}' target='_blank' class='open-btn'>OPEN_INTERFACE</a>
                 <div class='destroy-btn' onclick="destroyProject('${name}')">PURGE_INSTANCE</div>
             `;
             document.getElementById('graph').appendChild(div);
-            log(`RENDERED_CARD: ${name}`);
         }
-        async function destroyProject(name) {
-            if(!confirm(`PURGE HARDWARE FOR ${name}?`)) return;
+        async function checkPulse() {
             const base = localStorage.getItem('at_base');
-            await fetch(`${base}/api/destroy`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ repoName: name }) });
-            document.getElementById(`card-${name}`).remove();
-            log(`PURGED: ${name}`);
-        }
-        function initSocket(url) {
-            if(socket) socket.close();
-            socket = io(url);
-            socket.on('build_log', (msg) => log(msg));
-            socket.on('project_ready', (data) => addProjectCard(data.name, data.port));
+            const errorDisplay = document.getElementById('error-display');
+            if (!base) return;
+            try {
+                const res = await fetch(base + '/', {
+                    headers: { 'ngrok-skip-browser-warning': 'true' }
+                });
+                if (res.ok) {
+                    document.getElementById('hw-status').innerText = 'ONLINE';
+                    document.getElementById('hw-status').style.color = '#00ff41';
+                    document.getElementById('wizard').style.display = 'none';
+                    loadExisting();
+                } else {
+                    errorDisplay.innerText = `SERVER_REJECTED (Code: ${res.status})`;
+                }
+            } catch (e) {
+                errorDisplay.innerText = 'CONNECTION_FAILED: Ensure VPS is on and Ngrok is active.';
+            }
         }
         async function loadExisting() {
             const base = localStorage.getItem('at_base');
@@ -94,30 +99,7 @@
                 const apps = await res.json();
                 document.getElementById('active-list').innerText = `ACTIVE_CONTAINERS: ${apps.length}`;
                 apps.forEach(app => { if (app.port) addProjectCard(app.name, app.port); });
-            } catch (e) { log('SYNC_ERROR: UNREACHABLE'); }
-        }
-        async function checkPulse() {
-            const base = localStorage.getItem('at_base');
-            if (!base) return;
-            try {
-                const res = await fetch(base + '/', { headers: { 'ngrok-skip-browser-warning': 'true' } });
-                if (res.ok) {
-                    document.getElementById('hw-status').innerText = 'ONLINE';
-                    document.getElementById('hw-status').style.color = '#00ff41';
-                    document.getElementById('wizard').style.display = 'none';
-                    initSocket(base);
-                    loadExisting();
-                }
-            } catch (e) { log('CONNECTION_FAILED'); }
-        }
-        async function executeColdStart() {
-            const base = localStorage.getItem('at_base');
-            const repo = document.getElementById('gitUrl').value;
-            const token = document.getElementById('githubToken').value;
-            log(`INIT_DEPLOY: ${repo}`);
-            try {
-                await fetch(`${base}/api/launch`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ cloneCommand: repo, githubToken: token }) });
-            } catch (err) { log(`FATAL: ${err.message}`); }
+            } catch (e) { log('SYNC_ERROR'); }
         }
         function syncBackend() {
             let url = document.getElementById('vpsIp').value.trim();
