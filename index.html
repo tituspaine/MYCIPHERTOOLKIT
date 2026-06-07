@@ -9,43 +9,47 @@
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
         .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .console { background: #000; padding: 20px; color: #aaa; font-size: 11px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); line-height: 1.5; }
-        .viewport { position: relative; border-bottom: 1px solid #222; display: flex; align-items: center; justify-content: center; }
-        .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
-        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
+        .viewport { position: relative; border-bottom: 1px solid #222; padding: 40px; display: flex; flex-wrap: wrap; gap: 20px; align-content: flex-start; overflow-y: auto; }
+        .console { background: #000; padding: 20px; color: #666; font-size: 11px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); }
+        .card { border: 1px solid #222; padding: 20px; border-radius: 4px; background: #080808; }
+        .project-node { width: 300px; border: 1px solid var(--glow); background: #000; padding: 20px; position: relative; box-shadow: 0 0 15px rgba(0,255,65,0.1); }
+        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; }
+        input:focus { border-color: var(--glow); }
         button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
-        .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; text-align: center; }
-        .deploy-node { border: 1px solid var(--glow); padding: 20px; background: rgba(0, 255, 65, 0.1); text-align: center; box-shadow: 0 0 20px rgba(0,255,65,0.2); }
-        .deploy-link { color: #fff; text-decoration: underline; font-size: 18px; margin-top: 10px; display: block; }
+        .open-btn { background: #fff; color: #000; text-decoration: none; display: block; text-align: center; padding: 10px; margin-top: 15px; font-weight: bold; font-size: 14px; }
+        .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
     <div id='wizard' class='setup-wizard'>
-        <div style='max-width: 500px;'>
-            <h1 style='letter-spacing: 5px;'>ESTABLISH_LINK</h1>
+        <div style='max-width: 400px; text-align: center;'>
+            <h1 style='letter-spacing: 5px;'>SYSTEM_AUTH</h1>
             <input type='text' id='vpsIp' placeholder='https://...ngrok-free.dev'>
-            <button onclick='syncBackend()'>ESTABLISH_LINK</button>
+            <button onclick='syncBackend()'>INITIATE_LINK</button>
         </div>
     </div>
 
     <div class='grid-layout'>
         <div class='sidebar'>
-            <div>STATUS: <span id='hw-status' style='color:red;'>OFFLINE</span></div>
+            <div style='display:flex; justify-content:space-between;'>
+                <span>OS_STATUS:</span>
+                <span id='hw-status' style='color:red;'>OFFLINE</span>
+            </div>
             <div class='card'>
-                <h3>1. TARGET_REPOSITORY</h3>
-                <input type='text' id='gitUrl' placeholder='https://github.com/user/repo'>
-                <h3>2. GITHUB_PAT</h3>
-                <input type='password' id='githubToken' placeholder='ghp_xxxx'>
+                <h3>NEW_DEPLOYMENT</h3>
+                <input type='text' id='gitUrl' placeholder='REPOS_URL'>
+                <input type='password' id='githubToken' placeholder='GITHUB_PAT'>
+                <button id='coldStartBtn' onclick='executeColdStart()'>EXECUTE_COLD_START</button>
             </div>
-            <button id='coldStartBtn' onclick='executeColdStart()'>EXECUTE_COLD_START</button>
-            <button style='opacity:0.3; font-size:10px;' onclick='localStorage.clear(); location.reload();'>RESET_ALL</button>
+            <div id='active-list' style='font-size: 10px; opacity: 0.5;'>SCANNING_ACTIVE_PROJECTS...</div>
+            <button style='opacity:0.3; font-size:10px;' onclick='localStorage.clear(); location.reload();'>HARD_RESET</button>
         </div>
+
         <div class='viewport' id='graph'>
-            <div id='status-monitor' style='text-align:center;'>
-                <p style='opacity:0.5;'>AWAITING_DEPLOYMENT_COMMAND...</p>
-            </div>
+            <!-- Projects will appear here as nodes -->
         </div>
-        <div class='console' id='terminal'>> SYSTEM_READY...</div>
+
+        <div class='console' id='terminal'>> SYSTEM_BOOT_COMPLETE...</div>
     </div>
 
     <script>
@@ -57,20 +61,42 @@
             term.prepend(d);
         };
 
+        function addProjectCard(name, port) {
+            const base = localStorage.getItem('at_base');
+            const cleanBase = base.replace('https://', '').replace('http://', '').split(':')[0];
+            const appUrl = `${window.location.protocol}//${cleanBase}:${port}`;
+            
+            const id = `card-${name}`;
+            if(document.getElementById(id)) document.getElementById(id).remove();
+
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = 'project-node';
+            div.innerHTML = `
+                <div style='font-size: 10px; opacity: 0.5;'>PROJECT_IDENTIFIER</div>
+                <div style='font-size: 20px; font-weight: bold; margin-bottom: 10px;'>${name.toUpperCase()}</div>
+                <div style='font-size: 10px; color: #00ff41;'>● RUNNING_ON_PORT_${port}</div>
+                <a href='${appUrl}' target='_blank' class='open-btn'>OPEN_INTERFACE</a>
+            `;
+            document.getElementById('graph').appendChild(div);
+        }
+
         function initSocket(url) {
             socket = io(url);
-            socket.on('build_log', (msg) => {
-                log(msg);
-                if(msg.includes('DEPLOYMENT_SUCCESSFUL')) {
-                    document.getElementById('status-monitor').innerHTML = `
-                        <div class='deploy-node'>
-                            <h2>RECORD_LIVE</h2>
-                            <p>CONVO-NOTES is now active on your VPS.</p>
-                            <a href='#' class='deploy-link'>SCANNING_PORTS...</a>
-                        </div>
-                    `;
-                }
-            });
+            socket.on('build_log', (msg) => log(msg));
+            socket.on('project_ready', (data) => addProjectCard(data.name, data.port));
+        }
+
+        async function loadExisting() {
+            const base = localStorage.getItem('at_base');
+            try {
+                const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
+                const apps = await res.json();
+                document.getElementById('active-list').innerText = `ACTIVE_CONTAINERS: ${apps.length}`;
+                apps.forEach(app => {
+                    if(app.port !== 'PENDING') addProjectCard(app.name, app.port);
+                });
+            } catch(e) {}
         }
 
         async function checkPulse() {
@@ -83,7 +109,7 @@
                     document.getElementById('hw-status').style.color = '#00ff41';
                     document.getElementById('wizard').style.display = 'none';
                     initSocket(base);
-                    log('LINK_ESTABLISHED');
+                    loadExisting();
                 }
             } catch (e) { log('CONNECTION_FAILED'); }
         }
@@ -92,7 +118,7 @@
             const base = localStorage.getItem('at_base');
             const repo = document.getElementById('gitUrl').value;
             const token = document.getElementById('githubToken').value;
-            document.getElementById('status-monitor').innerHTML = "<p class='animate-pulse'>BUILD_IN_PROGRESS...</p>";
+            log(`INITIATING_COLD_START: ${repo}`);
             try {
                 await fetch(`${base}/api/launch`, {
                     method: 'POST',
