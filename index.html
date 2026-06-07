@@ -2,65 +2,102 @@
 <html lang='en'>
 <head>
     <meta charset='UTF-8'>
-    <title>MYCIPHER // WORKSTATION</title>
+    <title>MYCIPHER // COMMAND CENTER</title>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <style>
-        :root { --glow: #00ff41; }
-        body { background: #000; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 30px; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #222; padding-bottom: 10px; }
-        .main-content { display: grid; grid-template-columns: 1fr 400px; gap: 20px; flex: 1; overflow: hidden; margin-top: 20px; }
+        :root { --glow: #00ff41; --panel: #0a0a0a; }
+        body { background: #000; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 25px; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Status HUD */
+        .hud-status { display: flex; justify-content: space-between; align-items: center; background: #050505; border-bottom: 2px solid #222; padding: 15px 25px; margin: -25px -25px 25px -25px; }
+        .pulse-dot { height: 8px; width: 8px; background: #ff4444; border-radius: 50%; display: inline-block; margin-right: 10px; }
+        .pulse-live { background: var(--glow); box-shadow: 0 0 10px var(--glow); animation: blink 1.5s infinite; }
+
+        .main-grid { display: grid; grid-template-columns: 1fr 450px; gap: 25px; flex: 1; overflow: hidden; }
         .project-section { overflow-y: auto; }
-        .log-section { background: #050505; border: 1px solid #222; display: flex; flex-direction: column; }
-        #terminal { flex: 1; padding: 15px; font-size: 11px; color: #666; overflow-y: auto; white-space: pre-wrap; }
-        .project-row { background: #0a0a0a; border: 1px solid #111; padding: 20px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 2px solid var(--glow); }
-        .launch-panel { background: #0a0a0a; border: 1px solid #222; padding: 20px; display: flex; gap: 15px; align-items: flex-end; margin-bottom: 20px; }
-        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 10px; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; }
-        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; padding: 5px 10px; margin-left: 10px; }
+        
+        /* Progress Bar */
+        #progress-container { background: #111; height: 4px; width: 100%; margin-bottom: 20px; display: none; }
+        #progress-bar { background: var(--glow); height: 100%; width: 0%; transition: width 0.5s ease; box-shadow: 0 0 10px var(--glow); }
+
+        .project-row { background: var(--panel); border: 1px solid #222; padding: 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #333; }
+        .project-active { border-left-color: var(--glow); }
+        
+        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; font-family: inherit; outline: none; }
+        button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; font-family: inherit; }
+        #terminal { background: #000; padding: 15px; font-size: 11px; color: #666; height: 100%; overflow-y: auto; border: 1px solid #111; }
+        
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
-    <div class='header'>
-        <h1 style='margin:0;'>MYCIPHER_DASHBOARD</h1>
-        <button onclick='localStorage.clear(); location.reload();' style='background:transparent; color:#444;'>HARD_RESET</button>
+    <div class='hud-status'>
+        <div>
+            <span id='status-dot' class='pulse-dot'></span>
+            <span style='font-size:12px; letter-spacing:1px;'>CORE_IDENTITY: <b id='status-text'>SEARCHING...</b></span>
+        </div>
+        <div style='font-size:10px; opacity:0.5;'>LATENCY: <span id='ping-ms'>--</span>ms | UPTIME: <span id='uptime'>CALCULATING</span></div>
     </div>
 
-    <div class='launch-panel'>
-        <div><label style='font-size:10px;'>REPOSITORY_URL</label><br/><input type='text' id='repo' style='width:300px;'></div>
-        <div><label style='font-size:10px;'>GITHUB_TOKEN</label><br/><input type='password' id='token'></div>
+    <div style='display:flex; gap:20px; align-items:center; margin-bottom:25px;'>
+        <input type='text' id='repo' placeholder='TARGET_REPOSITORY_URL' style='flex:1;'>
+        <input type='password' id='token' placeholder='GITHUB_TOKEN' style='width:200px;'>
         <button onclick='launch()'>COLD_START</button>
     </div>
 
-    <div class='main-content'>
+    <div id='progress-container'><div id='progress-bar'></div></div>
+
+    <div class='main-grid'>
         <div class='project-section' id='project-list'></div>
-        <div class='log-section'>
-            <div style='padding: 5px 15px; background: #111; font-size: 10px;'>LIVE_BRAIN_STREAM</div>
-            <div id='terminal'>> AWAITING_COMMAND...</div>
+        <div style='display:flex; flex-direction:column;'>
+            <div style='padding:5px 15px; background:#111; font-size:10px;'>BRAIN_LOG_STREAM</div>
+            <div id='terminal'>> AWAITING_BOOT</div>
         </div>
     </div>
 
     <script>
         const base = localStorage.getItem('at_base');
-        if(!base) {
-            const ip = prompt('NGROK_URL:');
-            if(ip) { localStorage.setItem('at_base', ip); location.reload(); }
-        }
-
         const socket = io(base);
+        let buildProgress = 0;
+
         socket.on('build_log', (msg) => {
             const term = document.getElementById('terminal');
             term.innerHTML += `\n> ${msg}`;
             term.scrollTop = term.scrollHeight;
+            
+            // Logic to move progress bar
+            if(msg.includes('[STAGING]')) updateProgress(10);
+            if(msg.includes('[CLONING]')) updateProgress(30);
+            if(msg.includes('[BUILD]')) updateProgress(60);
+            if(msg.includes('[SUCCESS]')) { updateProgress(100); setTimeout(() => { document.getElementById('progress-container').style.display = 'none'; }, 2000); }
         });
 
+        function updateProgress(val) {
+            document.getElementById('progress-container').style.display = 'block';
+            document.getElementById('progress-bar').style.width = val + '%';
+        }
+
+        async function checkPerf() {
+            const start = Date.now();
+            try {
+                const res = await fetch(base + '/', { headers: { 'ngrok-skip-browser-warning': 'true' }});
+                const data = await res.json();
+                document.getElementById('ping-ms').innerText = Date.now() - start;
+                document.getElementById('status-dot').className = 'pulse-dot pulse-live';
+                document.getElementById('status-text').innerText = 'SYSTEM_LIVE';
+                document.getElementById('uptime').innerText = 'STABLE';
+            } catch (e) { 
+                document.getElementById('status-text').innerText = 'CONNECTION_RESTRICTED'; 
+            }
+        }
+
         async function launch() {
-            document.getElementById('terminal').innerHTML += '\n[SYSTEM] INITIATING_BUILD...';
-            const res = await fetch(`${base}/api/launch`, {
+            await fetch(`${base}/api/launch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
                 body: JSON.stringify({ cloneCommand: document.getElementById('repo').value, githubToken: document.getElementById('token').value })
             });
-            setTimeout(load, 3000);
+            updateProgress(5);
         }
 
         async function load() {
@@ -70,30 +107,22 @@
             list.innerHTML = '';
             apps.forEach(app => {
                 const row = document.createElement('div');
-                row.className = 'project-row';
-                const cleanBase = base.replace('https://', '');
+                row.className = 'project-row' + (app.port ? ' project-active' : '');
+                const cleanBase = base.split('://')[1];
                 const appUrl = `https://${cleanBase.split(':')[0]}:${app.port}`;
                 row.innerHTML = `
-                    <div><b>${app.name.toUpperCase()}</b><br/><small>PORT: ${app.port || 'PUBLISHING...'}</small></div>
+                    <div><b>${app.name.toUpperCase()}</b><br/><small style='opacity:0.5'>PORT: ${app.port || 'PREPARING'}</small></div>
                     <div>
-                        <button onclick="window.open('${base}/proxy/${app.name}', '_blank')">OPEN_INTERFACE</button>
-                        <button class='btn-purge' onclick="purge('${app.name}')">PURGE</button>
+                        <button onclick="window.open('${appUrl}', '_blank')" ${!app.port ? 'disabled style="opacity:0.3"' : ''}>OPEN</button>
                     </div>
                 `;
                 list.appendChild(row);
             });
         }
 
-        async function purge(name) {
-            if(!confirm(`PURGE ${name}?`)) return;
-            await fetch(`${base}/api/destroy`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                body: JSON.stringify({ repoName: name })
-            });
-            load();
-        }
-
+        setInterval(checkPerf, 5000);
+        setInterval(load, 3000);
+        checkPerf();
         load();
     </script>
 </body>
