@@ -9,25 +9,24 @@
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
         .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .viewport { background: #000; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; padding: 40px; overflow-y: auto; position: relative; z-index: 5; }
+        .viewport { background: #000; padding: 40px; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 25px; }
         .console { background: #000; padding: 20px; color: #666; font-size: 11px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); line-height: 1.5; }
         .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
-        .project-node { border: 1px solid var(--glow); background: #080808; padding: 20px; box-shadow: 0 0 15px rgba(0,255,65,0.2); height: fit-content; display: block !important; }
+        .project-tab { width: 320px; border: 1px solid var(--glow); background: #080808; padding: 20px; box-shadow: 0 0 15px rgba(0,255,65,0.2); transition: 0.3s; cursor: pointer; }
+        .project-tab:hover { background: #111; transform: translateY(-5px); }
         .open-btn { display: block; background: var(--glow); color: #000; text-align: center; padding: 12px; text-decoration: none; font-weight: bold; margin-top: 15px; }
         .destroy-btn { display: block; border: 1px solid #ff4444; color: #ff4444; text-align: center; padding: 8px; text-decoration: none; font-size: 10px; margin-top: 10px; cursor: pointer; }
-        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 15px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; font-size: 16px; }
-        button { background: var(--glow); color: #000; border: none; padding: 20px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 18px; }
+        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 15px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; }
+        button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 1000; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
     <div id='wizard' class='setup-wizard'>
         <div style='max-width: 400px; text-align: center;'>
-            <h1 style='letter-spacing: 5px; margin-bottom: 30px;'>SYSTEM_AUTH</h1>
-            <input type='text' id='vpsIp' placeholder='Ngrok URL (https://...ngrok-free.dev)'>
+            <h1 style='letter-spacing: 5px;'>SYSTEM_AUTH</h1>
+            <input type='text' id='vpsIp' placeholder='https://...ngrok-free.dev'>
             <button onclick='syncBackend()'>INITIATE_LINK</button>
-            <p id='error-display' style='color: #ff4444; font-size: 10px; margin-top: 15px; height: 20px;'></p>
-            <div onclick='localStorage.clear(); location.reload();' style='margin-top: 20px; font-size: 10px; opacity: 0.3; cursor: pointer; text-decoration: underline;'>FORCE_CACHE_PURGE</div>
         </div>
     </div>
     <div class='grid-layout'>
@@ -40,13 +39,15 @@
                 <h3>DEPLOY_NEW_INTERFACE</h3>
                 <input type='text' id='gitUrl' placeholder='REPOS_URL (.git)'>
                 <input type='password' id='githubToken' placeholder='GITHUB_PAT'>
-                <button id='coldStartBtn' onclick='executeColdStart()'>EXECUTE_COLD_START</button>
+                <button onclick='executeColdStart()'>EXECUTE_COLD_START</button>
             </div>
-            <div id='active-list' style='font-size: 10px; opacity: 0.5;'>RE-SCANNING HARDWARE...</div>
-            <button onclick='loadExisting()' style='background: #111; color: #fff; border: 1px solid #222; font-size: 10px; padding: 5px;'>FORCE RE-SCAN</button>
-            <button style='opacity:0.3; font-size:10px; margin-top: 10px;' onclick='localStorage.clear(); location.reload();'>FULL_UI_RESET</button>
+            <div id='active-count' style='font-size: 10px; opacity: 0.5;'>SCANNING HARDWARE...</div>
+            <button onclick='loadExisting()' style='background: #111; color: #fff; font-size: 10px;'>FORCE RE-SCAN</button>
+            <button style='opacity:0.3; font-size:10px;' onclick='localStorage.clear(); location.reload();'>FULL_UI_RESET</button>
         </div>
-        <div class='viewport' id='graph'></div>
+        <div class='viewport' id='node-container'>
+            <!-- Project Tabs will appear here -->
+        </div>
         <div class='console' id='terminal'>> SYSTEM_BOOT_COMPLETE...</div>
     </div>
     <script>
@@ -56,51 +57,48 @@
             d.innerText = `> ${m}`;
             document.getElementById('terminal').prepend(d);
         };
-        function addProjectCard(name, port) {
+        function createProjectTab(name, port) {
             const base = localStorage.getItem('at_base');
             const domain = base.replace('https://', '').replace('http://', '').split('/')[0];
-            const appUrl = `${window.location.protocol}//${domain.split(':')[0]}:${port}`;
+            const appUrl = `https://${domain.split(':')[0]}:${port}`;
+            const tabId = `tab-${name}`;
+            if(document.getElementById(tabId)) return;
+
             const div = document.createElement('div');
-            div.className = 'project-node';
+            div.id = tabId;
+            div.className = 'project-tab';
             div.innerHTML = `
-                <div style='font-size: 10px; opacity: 0.5;'>IDENTIFIER</div>
+                <div style='font-size: 10px; opacity: 0.5;'>NODE_ID</div>
                 <div style='font-size: 20px; font-weight: bold; margin-bottom: 10px; color: #00ff41;'>${name.toUpperCase()}</div>
-                <div style='font-size: 10px; color: #00ff41;'>● STATUS: LIVE</div>
+                <div style='font-size: 10px; color: #00ff41;'>● STATUS: ACTIVE</div>
                 <div style='font-size: 10px; opacity: 0.5; margin-top:5px;'>PORT: ${port}</div>
-                <a href='${appUrl}' target='_blank' class='open-btn'>OPEN_INTERFACE</a>
+                <button class='open-btn' onclick="window.open('${appUrl}', '_blank')">OPEN_INTERFACE</button>
                 <div class='destroy-btn' onclick="destroyProject('${name}')">PURGE_INSTANCE</div>
             `;
-            document.getElementById('graph').appendChild(div);
+            document.getElementById('node-container').appendChild(div);
         }
         async function checkPulse() {
             const base = localStorage.getItem('at_base');
-            const errorDisplay = document.getElementById('error-display');
-            // Fail-safe logic: Don't verify empty or placeholder URLs
-            if (!base || base.includes('ngrok-free.dev') && base.length < 25) return;
+            if (!base) return;
             try {
-                const res = await fetch(base + '/', {
-                    headers: { 'ngrok-skip-browser-warning': 'true' }
-                });
+                const res = await fetch(base + '/', { headers: { 'ngrok-skip-browser-warning': 'true' } });
                 if (res.ok) {
                     document.getElementById('hw-status').innerText = 'ONLINE';
                     document.getElementById('hw-status').style.color = '#00ff41';
                     document.getElementById('wizard').style.display = 'none';
                     loadExisting();
-                } else {
-                    errorDisplay.innerText = `SERVER_REJECTED (Code: ${res.status})`;
                 }
-            } catch (e) {
-                errorDisplay.innerText = 'CONNECTION_FAILED. Ensure VPS is on and Ngrok is active.';
-            }
+            } catch (e) { log('PULSE_FAILED'); }
         }
         async function loadExisting() {
             const base = localStorage.getItem('at_base');
             try {
                 const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
                 const apps = await res.json();
-                document.getElementById('active-list').innerText = `ACTIVE_CONTAINERS: ${apps.length}`;
-                apps.forEach(app => { if (app.port) addProjectCard(app.name, app.port); });
-            } catch (e) { log('SYNC_ERROR'); }
+                document.getElementById('active-count').innerText = `ACTIVE_NODES: ${apps.length}`;
+                document.getElementById('node-container').innerHTML = ''; 
+                apps.forEach(app => { if (app.port) createProjectTab(app.name, app.port); });
+            } catch (e) { log('SYNC_ERROR_UNREACHABLE'); }
         }
         function syncBackend() {
             let url = document.getElementById('vpsIp').value.trim();
@@ -109,10 +107,7 @@
             localStorage.setItem('at_base', url);
             checkPulse();
         }
-        window.onload = () => {
-            const saved = localStorage.getItem('at_base');
-            if (saved) checkPulse();
-        };
+        window.onload = checkPulse;
     </script>
 </body>
 </html>
