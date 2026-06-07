@@ -9,9 +9,14 @@ const docker = new Docker();
 const git = SimpleGit();
 const io = require('socket.io')(fastify.server, { cors: { origin: '*' } });
 
-fastify.register(require('@fastify/cors'), { origin: true });
+// FORCE OPEN GATES
+fastify.register(require('@fastify/cors'), {
+  origin: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'ngrok-skip-browser-warning']
+});
 
-fastify.get('/', async () => { return { status: 'ONLINE', node: 'CORE' }; });
+fastify.get('/', async () => { return { status: 'ONLINE' }; });
 
 fastify.get('/api/projects', async () => {
     const containers = await docker.listContainers({ all: true });
@@ -21,39 +26,46 @@ fastify.get('/api/projects', async () => {
     }));
 });
 
+// AGGRESSIVE PURGE
+fastify.post('/api/destroy', async (req, reply) => {
+    const { repoName } = req.body;
+    console.log(`>>> [TERMINATE] Request for: ${repoName}`);
+    const containers = await docker.listContainers({ all: true });
+    for (const c of containers) {
+        if (c.Names[0].includes(repoName)) {
+            const container = docker.getContainer(c.Id);
+            await container.stop().catch(() => {});
+            await container.remove().catch(() => {});
+        }
+    }
+    return { status: 'WIPED' };
+});
+
 fastify.post('/api/launch', async (req, reply) => {
     console.log('>>> [HANDSHAKE] COLD_START RECEIVED');
     const { cloneCommand, githubToken } = req.body;
-    
-    // CLEAN URL LOGIC
-    let cleanUrl = cloneCommand.trim();
-    if (cleanUrl.endsWith('.git')) cleanUrl = cleanUrl.slice(0, -4);
-    const repoMatch = cleanUrl.match(/github\.com\/([\w-]+\/[\w.-]+)/);
-    
+    const repoMatch = cloneCommand.match(/github\.com\/([\w-]+\/[\w.-]+)/);
     if (!repoMatch) return { error: 'INVALID_URL' };
-    
-    const repoPath = repoMatch[1];
-    const repoName = repoPath.split('/').pop().toLowerCase();
+
+    const repoName = repoMatch[1].split('/').pop().toLowerCase();
     const workDir = path.join(__dirname, 'tmp', repoName);
-    const finalCloneUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : `https://github.com/${repoPath}.git`;
+    const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoMatch[1]}.git` : cloneCommand;
 
     process.nextTick(async () => {
         const broadcast = (m) => { io.emit('build_log', m); console.log(m); };
         try {
-            broadcast(`[STAGING] Target: ${repoName}`);
+            broadcast(`[STAGING] Preparing ${repoName}...`);
             if (fs.existsSync(workDir)) fs.removeSync(workDir);
-            broadcast('[CLONING] Intent: Accessing Private Repo...');
-            await git.clone(finalCloneUrl, workDir);
-            
+            await git.clone(repoUrl, workDir);
             fs.writeFileSync(path.join(workDir, 'Dockerfile'), getUniversalDockerfile(workDir));
-            broadcast('[BUILD] Constructing isolated environment...');
+            broadcast('[BUILD] Starting Docker Build...');
             
             const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
             docker.modem.followProgress(buildStream, async (err) => {
                 if (err) return broadcast(`[FATAL] ${err.message}`);
                 const container = await docker.createContainer({ Image: repoName, HostConfig: { PublishAllPorts: true } });
                 await container.start();
-                broadcast(`[SUCCESS] ${repoName} is now live.`);
+                broadcast(`[SUCCESS] ${repoName} is live.`);
             });
         } catch (e) { broadcast(`[ERROR] ${e.message}`); }
     });
