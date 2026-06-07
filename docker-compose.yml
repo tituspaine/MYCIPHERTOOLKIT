@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   autolaunch-core:
     build: .
@@ -5,7 +7,7 @@ services:
     restart: always
     ports:
       - "3000:3000"
-      - "4000-4100:4000-4100" # Range for deployed apps
+      - "4050-4100:4050-4100" # Shifted start from 4000 to 4050
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./storage:/usr/src/app/orchestrator/tmp
