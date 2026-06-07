@@ -4,83 +4,81 @@
     <meta charset='UTF-8'>
     <title>AUTOLAUNCH // SPATIAL OS</title>
     <style>
-        :root { --glow: #00ff41; --bg: #030303; --panel: rgba(15, 15, 15, 0.9); }
+        :root { --glow: #00ff41; --bg: #030303; }
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
-        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; border-top: 1px solid var(--glow); }
+        .sidebar { border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; }
+        .viewport { position: relative; border-bottom: 1px solid #222; }
+        .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); }
         .card { border: 1px solid #333; padding: 20px; }
-        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
-        button { background: var(--glow); color: #000; border: none; padding: 10px; width: 100%; cursor: pointer; margin-top: 10px; font-weight: bold; }
+        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; margin-top: 10px; box-sizing: border-box; }
+        button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; text-align: center; }
     </style>
 </head>
 <body>
     <div id='wizard' class='setup-wizard'>
         <div style='max-width: 500px;'>
-            <h1>ESTABLISH_LINK</h1>
-            <p style='color: #666;'>PASTE YOUR NGROK URL OR VPS IP</p>
-            <input type='text' id='vpsIp' placeholder='https://...ngrok-free.app' onkeyup='if(event.key==="Enter") syncBackend()'>
+            <h1 style='letter-spacing: 5px;'>ESTABLISH_LINK</h1>
+            <p style='color: #666;'>PASTE YOUR NGROK URL</p>
+            <input type='text' id='vpsIp' placeholder='https://...ngrok-free.dev' value=''>
             <button onclick='syncBackend()'>ESTABLISH_LINK</button>
         </div>
     </div>
 
     <div class='grid-layout'>
         <div class='sidebar'>
-            <div style='display:flex; justify-content:space-between; align-items:center; font-size:10px;'>
-                <span>SYSTEM_STATUS: <span id='hw-status' style='color:red;'>OFFLINE</span></span>
-                <button style='width:auto; padding: 4px 8px; font-size:9px;' onclick='checkPulse()'>REFRESH</button>
-            </div>
+            <div>STATUS: <span id='hw-status' style='color:red;'>OFFLINE</span></div>
             <div class='card'>
                 <h3>1. TARGET_REPOSITORY</h3>
-                <input type='text' id='gitUrl' placeholder='PASTE CLONE COMMAND'>
-            </div>
-            <div class='card'>
-                <h3>2. ENVIRONMENTAL_INJECTION</h3>
-                <div id='env-fields'></div>
+                <input type='text' id='gitUrl' placeholder='PASTE CLONE URL'>
             </div>
             <button onclick='executeBuild()'>EXECUTE_COLD_START</button>
+            <button style='background:transparent; border:1px solid #333; color:#444; font-size:10px;' onclick='localStorage.clear(); location.reload();'>RESET_ALL</button>
         </div>
         <div class='viewport' id='graph'></div>
-        <div class='console' id='terminal'>> AWAITING_CONNECTION...</div>
+        <div class='console' id='terminal'>> SYSTEM_INIT...</div>
     </div>
 
     <script>
-        function log(msg) {
+        const log = (m) => {
             const d = document.createElement('div');
-            d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            d.innerText = `[${new Date().toLocaleTimeString()}] ${m}`;
             document.getElementById('terminal').prepend(d);
-        }
+        };
 
         async function checkPulse() {
             const base = localStorage.getItem('at_base');
-            if(!base) { document.getElementById('wizard').style.display='flex'; return; }
-            
-            log(`CONNECTING_TO: ${base}`);
+            if (!base) return;
             try {
-                // Added ngrok-skip-browser-warning header to bypass the intervention page
-                const res = await fetch(`${base}/`, {
+                const res = await fetch(base + '/', {
                     headers: { 'ngrok-skip-browser-warning': 'true' }
                 });
-                if(res.ok) {
+                if (res.ok) {
                     document.getElementById('hw-status').innerText = 'ONLINE';
                     document.getElementById('hw-status').style.color = '#00ff41';
                     document.getElementById('wizard').style.display = 'none';
-                    log('HANDSHAKE_SUCCESSFUL: SYSTEM_STABLE');
-                } else {
-                    throw new Error();
+                    log('LINK_ESTABLISHED: SYSTEM_LIVE');
                 }
-            } catch (e) { log('ERR: CONNECTION_FAILED. RETRYING...'); }
+            } catch (e) {
+                log('PULSE_FAILED: BACKEND_UNREACHABLE');
+            }
         }
 
         function syncBackend() {
-            let val = document.getElementById('vpsIp').value.trim();
-            if(!val.startsWith('http')) val = `https://${val}`;
-            localStorage.setItem('at_base', val);
+            let url = document.getElementById('vpsIp').value.trim();
+            if (!url) return;
+            if (!url.startsWith('http')) url = 'https://' + url;
+            localStorage.setItem('at_base', url);
+            log('SAVING_ENDPOINT: ' + url);
             checkPulse();
+            // Force hide if pulse is taking too long to show progress
+            setTimeout(() => {
+                document.getElementById('wizard').style.display = 'none';
+            }, 1000);
         }
 
-        checkPulse();
+        window.onload = checkPulse;
     </script>
 </body>
 </html>
