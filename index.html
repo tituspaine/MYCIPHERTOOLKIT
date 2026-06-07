@@ -1,66 +1,76 @@
 <!DOCTYPE html>
 <html lang='en'>
 <head>
-    <meta charset='UTF-8'>
-    <title>AutoLaunch | Secure Gate</title>
+    <title>AutoLaunch | Command Center</title>
+    <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
     <style>
-        body { background: #050505; color: #00ff41; font-family: monospace; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .shield { border: 1px solid #00ff41; padding: 40px; box-shadow: 0 0 20px rgba(0,255,65,0.2); width: 350px; }
-        input { background: #000; border: 1px solid #00ff41; color: #00ff41; padding: 10px; width: 100%; margin-bottom: 10px; }
-        button { width: 106%; background: #00ff41; color: #000; border: none; padding: 10px; cursor: pointer; font-weight: bold; }
-        #main-ui { display: none; width: 100vw; height: 100vh; flex-direction: column; }
+        body { background: #050505; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; display: grid; grid-template-columns: 350px 1fr 300px; height: 100vh; }
+        .panel { border: 1px solid #222; padding: 20px; overflow-y: auto; }
+        #canvas-container { background: #000; position: relative; }
+        textarea { background: #000; border: 1px solid #00ff41; color: #00ff41; width: 100%; height: 100px; margin: 10px 0; }
+        .log-line { font-size: 10px; color: #888; border-bottom: 1px solid #111; }
     </style>
 </head>
 <body>
-    <div id='login-gate' class='shield'>
-        <h2>ACCESS_REQUIRED</h2>
-        <input type='text' id='user' placeholder='USERNAME'>
-        <input type='password' id='pass' placeholder='PASSWORD'>
-        <button onclick='login()'>INITIATE_GATE</button>
+    <div class='panel'>
+        <h3>COMMAND_INPUT</h3>
+        <input type='text' id='git' placeholder='git clone ...' style='width:90%;'>
+        <textarea id='env' placeholder='PASTE .ENV SECRETS HERE'></textarea>
+        <label><input type='checkbox' id='db'> AUTO_PROVISION_POSTGRES</label>
+        <button onclick='launch()' style='width:100%; margin-top:10px; background:#00ff41;'>DEPLOY_NODE</button>
     </div>
 
-    <div id='main-ui'>
-        <div style='padding: 20px; border-bottom: 1px solid #333;'>SYSTEM // ACTIVE_SESSIONS</div>
-        <div style='padding: 40px;'>
-            <input type='text' id='gitCmd' placeholder='PASTE CLONE COMMAND'>
-            <button onclick='launch()'>EXECUTE_BUILD</button>
-        </div>
+    <div id='canvas-container'>
+        <!-- 3D Node Map Renders Here -->
+    </div>
+
+    <div class='panel'>
+        <h3>LIVE_STREAMS</h3>
+        <div id='logs'></div>
     </div>
 
     <script>
-        const token = localStorage.getItem('at_token');
-        if (token) showUI();
-
-        async function login() {
-            const username = document.getElementById('user').value;
-            const password = document.getElementById('pass').value;
-            const res = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            const data = await res.json();
-            if (data.token) {
-                localStorage.setItem('at_token', data.token);
-                showUI();
-            } else alert('UNAUTHORIZED');
+        const socket = io();
+        
+        // 3D Visualizer Logic
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth - 650, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        
+        function addNode(name) {
+            const geom = new THREE.SphereGeometry(0.5, 32, 32);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00ff41, wireframe: true });
+            const node = new THREE.Mesh(geom, mat);
+            node.position.set(Math.random()*5-2.5, Math.random()*5-2.5, Math.random()*5-2.5);
+            scene.add(node);
         }
-
-        function showUI() {
-            document.getElementById('login-gate').style.display = 'none';
-            document.getElementById('main-ui').style.display = 'flex';
-        }
+        camera.position.z = 10;
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        animate();
 
         async function launch() {
-            const cmd = document.getElementById('gitCmd').value;
+            const git = document.getElementById('git').value;
+            const env = document.getElementById('env').value;
+            const db = document.getElementById('db').checked;
             const res = await fetch('/api/launch', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('at_token')}` },
-                body: JSON.stringify({ cloneCommand: cmd })
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ cloneCommand: git, envVars: env, usePostgres: db })
             });
             const data = await res.json();
-            alert(`DEPLOYED AT PORT: ${data.port}`);
+            socket.emit('join-logs', data.subdomain);
+            addNode(data.subdomain);
         }
+
+        socket.on('log', (msg) => {
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.innerText = msg;
+            document.getElementById('logs').prepend(div);
+        });
     </script>
 </body>
 </html>
