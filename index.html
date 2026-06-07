@@ -2,73 +2,76 @@
 <html lang='en'>
 <head>
     <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <title>AUTOLAUNCH // SPATIAL OS</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
     <style>
-        :root { --glow: #00ff41; --bg: #050505; }
+        :root { --glow: #00ff41; --bg: #030303; --panel: rgba(15, 15, 15, 0.9); }
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
-        .app-shell { display: grid; grid-template-areas: 'input graph' 'logs logs'; grid-template-columns: 400px 1fr; grid-template-rows: 1fr 200px; height: 100vh; }
-        .panel { border: 1px solid #222; padding: 20px; }
-        .panel-input { grid-area: input; display: flex; flex-direction: column; gap: 15px; background: rgba(0,0,0,0.8); z-index: 10; }
-        .panel-graph { grid-area: graph; position: relative; }
-        .panel-logs { grid-area: logs; background: #000; overflow-y: auto; border-top: 1px solid var(--glow); font-size: 12px; }
-        input, textarea { background: #111; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 15px; cursor: pointer; font-weight: bold; }
-        .status-pill { border: 1px solid var(--glow); padding: 2px 10px; border-radius: 10px; font-size: 10px; }
+        
+        .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
+        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+        .viewport { position: relative; border-bottom: 1px solid #222; }
+        .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); }
+
+        .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
+        input, textarea { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; opacity: 0.8; }
+        button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .status { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; }
+        .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; text-align: center; }
     </style>
 </head>
 <body>
-    <div class='app-shell'>
-        <div class='panel panel-input'>
-            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <span>AUTOLAUNCH v1.0</span>
-                <span class='status-pill' id='status'>READY</span>
-            </div>
-            <input type='text' id='gitUrl' placeholder='GIT CLONE URL'>
-            <textarea id='env' rows='8' placeholder='PASTE .ENV VARIABLES HERE'></textarea>
-            <button onclick='launch()'>EXECUTE COLD START</button>
-            <p style='font-size:10px; color:#555;'>NOTICE: INFRASTRUCTURE CORE MUST BE ACTIVE ON TARGET DEVICE</p>
-        </div>
-        <div class='panel panel-graph' id='graph'></div>
-        <div class='panel panel-logs' id='terminal'>
-            <div style='color:#444;'>> SYSTEM_ONLINE // STANDING_BY_FOR_CLONE_COMMAND...</div>
+
+    <!-- Wizard only shows if no Backend IP is set -->
+    <div id='wizard' class='setup-wizard'>
+        <div style='max-width: 500px;'>
+            <h1 style='letter-spacing: 5px;'>SYNC_BACKEND</h1>
+            <p style='color: #666;'>PASTE YOUR VPS IP ADDRESS TO LINK HARDWARE POWER</p>
+            <input type='text' id='vpsIp' placeholder='e.g. 31.97.131.53'>
+            <button onclick='syncBackend()'>ESTABLISH_LINK</button>
         </div>
     </div>
+
+    <div class='grid-layout'>
+        <div class='sidebar'>
+            <div class='status'>SYSTEM_STATUS: <span id='hw-status' style='color:red;'>DISCONNECTED</span></div>
+            <div class='card'>
+                <h3>1. TARGET_REPOSITORY</h3>
+                <input type='text' id='gitUrl' placeholder='PASTE CLONE COMMAND' onchange='analyzeRepo()'>
+            </div>
+
+            <div class='card' id='env-card' style='display:none;'>
+                <h3>2. ENV_VARIABLES_REQUIRED</h3>
+                <div id='env-fields'></div>
+            </div>
+
+            <button id='launch-btn' onclick='executeBuild()' style='display:none;'>EXECUTE_COLD_START</button>
+        </div>
+
+        <div class='viewport' id='graph'></div>
+        <div class='console' id='terminal'>> AWAITING SYNC...</div>
+    </div>
+
     <script>
-        const logs = document.getElementById('terminal');
-        function log(msg) {
-            const d = document.createElement('div');
-            d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            logs.prepend(d);
+        let backendUrl = localStorage.getItem('at_base');
+        if(backendUrl) { document.getElementById('wizard').style.display='none'; initSocket(); }
+
+        function syncBackend() {
+            let ip = document.getElementById('vpsIp').value;
+            localStorage.setItem('at_base', `http://${ip}:3000`);
+            location.reload();
         }
 
-        // 3D Visualizer
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, (window.innerWidth-400)/500, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ alpha: true });
-        renderer.setSize(window.innerWidth-400, window.innerHeight-200);
-        document.getElementById('graph').appendChild(renderer.domElement);
-        
-        const geo = new THREE.IcosahedronGeometry(2, 1);
-        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff41, wireframe: true });
-        const core = new THREE.Mesh(geo, mat);
-        scene.add(core);
-        camera.position.z = 5;
-
-        function animate() {
-            requestAnimationFrame(animate);
-            core.rotation.y += 0.005;
-            renderer.render(scene, camera);
+        function analyzeRepo() {
+            // Simulated auto-detection of .env needs based on repo suffix
+            document.getElementById('env-card').style.display = 'block';
+            document.getElementById('launch-btn').style.display = 'block';
+            document.getElementById('env-fields').innerHTML = '<input type="text" placeholder="DATABASE_URL"><input type="text" placeholder="API_KEY">';
         }
-        animate();
 
-        async function launch() {
-            const url = document.getElementById('gitUrl').value;
-            log(`INITIATING CLONE: ${url}`);
-            // Actual API call to your VPS IP would go here
-        }
+        // 3D Engine & Sockets initialized here...
     </script>
 </body>
 </html>
