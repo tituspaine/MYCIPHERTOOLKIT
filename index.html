@@ -7,33 +7,21 @@
     <style>
         :root { --glow: #00ff41; --panel: rgba(10, 10, 10, 0.9); }
         body { background: #000; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 25px; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        
         .hud-status { display: flex; justify-content: space-between; align-items: center; background: #050505; border-bottom: 2px solid #222; padding: 15px 25px; margin: -25px -25px 25px -25px; }
-        .pulse-dot { height: 8px; width: 8px; background: #ff4444; border-radius: 50%; display: inline-block; margin-right: 10px; }
-        .pulse-live { background: var(--glow); box-shadow: 0 0 10px var(--glow); }
-
+        .pulse-dot { height: 8px; width: 8px; background: var(--glow); border-radius: 50%; display: inline-block; margin-right: 10px; box-shadow: 0 0 10px var(--glow); }
         .main-grid { display: grid; grid-template-columns: 1fr 400px; gap: 20px; flex: 1; overflow: hidden; }
-        
-        #progress-container { height: 2px; width: 100%; background: #111; margin-bottom: 20px; display: none; }
+        #progress-container { height: 2px; width: 100%; background: #111; margin-bottom: 10px; display: none; }
         #progress-bar { height: 100%; width: 0%; background: var(--glow); transition: width 0.5s ease; }
-
         .project-row { background: var(--panel); border: 1px solid #222; padding: 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #333; }
-        .project-active { border-left-color: var(--glow); }
-        
         input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; font-family: inherit; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; font-family: inherit; }
-        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; padding: 8px 15px; margin-left: 10px; font-size: 10px; }
-
-        #terminal { background: #050505; padding: 15px; font-size: 11px; color: #666; height: 100%; overflow-y: auto; white-space: pre-wrap; border: 1px solid #111; }
+        button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; }
+        #terminal { flex: 1; padding: 15px; font-size: 11px; color: #666; overflow-y: auto; white-space: pre-wrap; border: 1px solid #111; }
     </style>
 </head>
 <body>
     <div class='hud-status'>
-        <div>
-            <span class='pulse-dot pulse-live' id='pulse'></span>
-            <span style='font-size:12px; letter-spacing:1px;'>CORE_IDENTITY: <b id='status-text'>SYSTEM_LIVE</b></span>
-        </div>
-        <div style='font-size:10px; opacity:0.5;'>LATENCY: <span id='ping-ms'>0</span>ms | UPTIME: <span id='uptime'>STABLE</span></div>
+        <div><span class='pulse-dot'></span> CORE_IDENTITY: <b>SYSTEM_LIVE</b></div>
+        <div style='font-size:10px; opacity:0.5;'>BRAIN_LINK: ACTIVE</div>
     </div>
 
     <div style='display:flex; gap:20px; align-items:center; margin-bottom:20px;'>
@@ -47,7 +35,7 @@
     <div class='main-grid'>
         <div id='project-list'></div>
         <div style='display:flex; flex-direction:column;'>
-            <div style='padding:5px 15px; background:#111; font-size:10px;'>BRAIN_LOG_STREAM</div>
+            <div style='padding:5px 15px; background:#111; font-size:10px;'>LIVE_BRAIN_STREAM</div>
             <div id='terminal'>> AWAITING_BOOT</div>
         </div>
     </div>
@@ -55,46 +43,34 @@
     <script>
         const base = localStorage.getItem('at_base');
         const socket = io(base);
-
+        
         socket.on('build_log', (msg) => {
             const term = document.getElementById('terminal');
             term.innerHTML += `\n${msg}`;
             term.scrollTop = term.scrollHeight;
-            
-            if(msg.includes('[CLONING]')) updateProgress(30);
-            if(msg.includes('[BUILD]')) updateProgress(60);
-            if(msg.includes('[SUCCESS]')) { 
-                updateProgress(100); 
-                setTimeout(() => { document.getElementById('progress-container').style.display = 'none'; }, 2000);
-                load();
-            }
         });
-
-        function updateProgress(val) {
-            document.getElementById('progress-container').style.display = 'block';
-            document.getElementById('progress-bar').style.width = val + '%';
-        }
 
         async function launch() {
             const repoUrl = document.getElementById('repo').value;
             const githubToken = document.getElementById('token').value;
-            document.getElementById('terminal').innerHTML += '\n[SYSTEM] INITIATING_COLD_START...';
-            await fetch(`${base}/api/launch`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                body: JSON.stringify({ cloneCommand: repoUrl, githubToken: githubToken })
-            });
-            updateProgress(10);
-        }
+            
+            if(!repoUrl) { alert('ENTER REPO URL'); return; }
 
-        async function purge(name) {
-            if(!confirm(`PURGE ${name.toUpperCase()}?`)) return;
-            await fetch(`${base}/api/destroy`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                body: JSON.stringify({ repoName: name })
-            });
-            load();
+            document.getElementById('terminal').innerHTML += `\n[UI] SENDING COLD_START TO ${base}/api/launch`;
+            
+            try {
+                const response = await fetch(`${base}/api/launch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                    body: JSON.stringify({ cloneCommand: repoUrl, githubToken: githubToken })
+                });
+                
+                const data = await response.json();
+                document.getElementById('terminal').innerHTML += `\n[BRAIN_RESPONSE] ${JSON.stringify(data)}`;
+            } catch (error) {
+                document.getElementById('terminal').innerHTML += `\n[FATAL_UI_ERROR] ${error.message}`;
+                alert('BROWSER BLOCKED REQUEST: See Brain Stream for details.');
+            }
         }
 
         async function load() {
@@ -105,15 +81,12 @@
                 list.innerHTML = '';
                 apps.forEach(app => {
                     const row = document.createElement('div');
-                    row.className = 'project-row' + (app.port ? ' project-active' : '');
+                    row.className = 'project-row';
                     const cleanBase = base.split('://')[1];
                     const appUrl = `https://${cleanBase.split(':')[0]}:${app.port}`;
                     row.innerHTML = `
-                        <div><b>${app.name.toUpperCase()}</b><br/><small style='opacity:0.5'>PORT: ${app.port || 'PREPARING'}</small></div>
-                        <div style='display:flex; align-items:center;'>
-                            <button onclick="window.open('${appUrl}', '_blank')" ${!app.port ? 'disabled style="opacity:0.3"' : ''}>OPEN</button>
-                            <button class='btn-purge' onclick="purge('${app.name}')">PURGE</button>
-                        </div>
+                        <div><b>${app.name.toUpperCase()}</b><br/><small style='opacity:0.5'>PORT: ${app.port || 'DYN'}</small></div>
+                        <button onclick="window.open('${appUrl}', '_blank')">OPEN</button>
                     `;
                     list.appendChild(row);
                 });
