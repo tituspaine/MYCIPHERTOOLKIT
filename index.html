@@ -6,54 +6,61 @@
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <style>
         :root { --glow: #00ff41; }
-        body { background: #000; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 40px; margin: 0; }
-        .header { border-bottom: 2px solid #222; padding-bottom: 20px; display: flex; justify-content: space-between; }
-        .launch-panel { background: #0a0a0a; border: 1px solid #222; padding: 20px; margin: 20px 0; display: flex; gap: 20px; align-items: flex-end; }
-        .project-row { background: #050505; border: 1px solid #111; padding: 20px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 2px solid var(--glow); }
-        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; }
-        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; }
+        body { background: #000; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 30px; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #222; padding-bottom: 10px; }
+        .main-content { display: grid; grid-template-columns: 1fr 400px; gap: 20px; flex: 1; overflow: hidden; margin-top: 20px; }
+        .project-section { overflow-y: auto; }
+        .log-section { background: #050505; border: 1px solid #222; display: flex; flex-direction: column; }
+        #terminal { flex: 1; padding: 15px; font-size: 11px; color: #666; overflow-y: auto; white-space: pre-wrap; }
+        .project-row { background: #0a0a0a; border: 1px solid #111; padding: 20px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 2px solid var(--glow); }
+        .launch-panel { background: #0a0a0a; border: 1px solid #222; padding: 20px; display: flex; gap: 15px; align-items: flex-end; margin-bottom: 20px; }
+        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 10px; outline: none; }
+        button { background: var(--glow); color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; }
+        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; padding: 5px 10px; margin-left: 10px; }
     </style>
 </head>
 <body>
     <div class='header'>
-        <h1 style='margin:0;'>PROJ_MANIFEST_V1</h1>
-        <button onclick='localStorage.clear(); location.reload();' style='background:transparent; color:#444; font-size:10px;'>HARD_RESET</button>
+        <h1 style='margin:0;'>MYCIPHER_DASHBOARD</h1>
+        <button onclick='localStorage.clear(); location.reload();' style='background:transparent; color:#444;'>HARD_RESET</button>
     </div>
 
     <div class='launch-panel'>
-        <div><label style='font-size:10px;'>REPOS_URL</label><br/><input type='text' id='git'></div>
-        <div><label style='font-size:10px;'>TOKEN</label><br/><input type='password' id='tok'></div>
+        <div><label style='font-size:10px;'>REPOSITORY_URL</label><br/><input type='text' id='repo' style='width:300px;'></div>
+        <div><label style='font-size:10px;'>GITHUB_TOKEN</label><br/><input type='password' id='token'></div>
         <button onclick='launch()'>COLD_START</button>
     </div>
 
-    <div id='project-list'></div>
+    <div class='main-content'>
+        <div class='project-section' id='project-list'></div>
+        <div class='log-section'>
+            <div style='padding: 5px 15px; background: #111; font-size: 10px;'>LIVE_BRAIN_STREAM</div>
+            <div id='terminal'>> AWAITING_COMMAND...</div>
+        </div>
+    </div>
 
     <script>
         const base = localStorage.getItem('at_base');
-        if(!base) { 
-            const ip = prompt('Enter Ngrok URL:'); 
+        if(!base) {
+            const ip = prompt('NGROK_URL:');
             if(ip) { localStorage.setItem('at_base', ip); location.reload(); }
         }
 
+        const socket = io(base);
+        socket.on('build_log', (msg) => {
+            const term = document.getElementById('terminal');
+            term.innerHTML += `\n> ${msg}`;
+            term.scrollTop = term.scrollHeight;
+        });
+
         async function launch() {
+            document.getElementById('terminal').innerHTML += '\n[SYSTEM] INITIATING_BUILD...';
             const res = await fetch(`${base}/api/launch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                body: JSON.stringify({ cloneCommand: document.getElementById('git').value, githubToken: document.getElementById('tok').value })
+                body: JSON.stringify({ cloneCommand: document.getElementById('repo').value, githubToken: document.getElementById('token').value })
             });
-            alert('Build Initiated');
-            setTimeout(load, 2000);
-        }
-
-        async function purge(name) {
-            if(!confirm(`Purge ${name}?`)) return;
-            await fetch(`${base}/api/destroy`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                body: JSON.stringify({ repoName: name })
-            });
-            load();
+            setTimeout(load, 3000);
         }
 
         async function load() {
@@ -64,18 +71,29 @@
             apps.forEach(app => {
                 const row = document.createElement('div');
                 row.className = 'project-row';
-                const cleanBase = base.split('://')[1];
+                const cleanBase = base.replace('https://', '');
                 const appUrl = `https://${cleanBase.split(':')[0]}:${app.port}`;
                 row.innerHTML = `
-                    <div><b>${app.name.toUpperCase()}</b><br/><small>PORT: ${app.port || 'DYN'}</small></div>
+                    <div><b>${app.name.toUpperCase()}</b><br/><small>PORT: ${app.port || 'PUBLISHING...'}</small></div>
                     <div>
-                        <button onclick="window.open('${appUrl}', '_blank')">OPEN</button>
+                        <button onclick="window.open('${base}/proxy/${app.name}', '_blank')">OPEN_INTERFACE</button>
                         <button class='btn-purge' onclick="purge('${app.name}')">PURGE</button>
                     </div>
                 `;
                 list.appendChild(row);
             });
         }
+
+        async function purge(name) {
+            if(!confirm(`PURGE ${name}?`)) return;
+            await fetch(`${base}/api/destroy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ repoName: name })
+            });
+            load();
+        }
+
         load();
     </script>
 </body>
