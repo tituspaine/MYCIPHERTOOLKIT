@@ -1,10 +1,8 @@
 const fastify = require('fastify')({ logger: true });
 const Docker = require('dockerode');
-const { exec } = require('child_process');
+const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs-extra');
-const util = require('util');
-const execAsync = util.promisify(exec);
 
 const docker = new Docker();
 const io = require('socket.io')(fastify.server, { cors: { origin: '*' } });
@@ -12,13 +10,11 @@ const io = require('socket.io')(fastify.server, { cors: { origin: '*' } });
 fastify.register(require('@fastify/cors'), { origin: true });
 
 fastify.get('/api/projects', async () => {
-    try {
-        const containers = await docker.listContainers({ all: true });
-        return containers.map(c => ({
-            name: c.Names[0].replace('/', ''),
-            port: c.Ports[0]?.PublicPort || null
-        }));
-    } catch (e) { return []; }
+    const containers = await docker.listContainers({ all: true });
+    return containers.map(c => ({
+        name: c.Names[0].replace('/', ''),
+        port: c.Ports[0]?.PublicPort || null
+    }));
 });
 
 fastify.post('/api/launch', async (req, reply) => {
@@ -30,49 +26,38 @@ fastify.post('/api/launch', async (req, reply) => {
     const repoName = repoPath.split('/').pop().toLowerCase();
     const workDir = path.join(__dirname, 'tmp', repoName);
 
-    // Fire and forget the build so the API responds immediately
-    (async () => {
-        const broadcast = (m) => { 
-            io.emit('build_log', m); 
-            console.log(`[BUILD_LOG] ${repoName}: ${m}`); 
-        };
+    console.log(`>>> [INITIATING] ${repoName}`);
+    
+    try {
+        if (fs.existsSync(workDir)) fs.removeSync(workDir);
+        fs.ensureDirSync(workDir);
 
-        try {
-            broadcast('PHASE_1: FILESYSTEM_INIT');
-            await fs.ensureDir(path.join(__dirname, 'tmp'));
-            if (await fs.pathExists(workDir)) await fs.remove(workDir);
-            
-            broadcast('PHASE_2: CLONING_REPOSITORY');
-            const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : cloneCommand;
-            await execAsync(`git clone ${repoUrl} ${workDir}`);
+        const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : cloneCommand;
+        
+        // FORCE EXECUTION
+        console.log(`>>> [SHELL_START] CLONING ${repoName}`);
+        execSync(`git clone ${repoUrl} ${workDir}`, { stdio: 'inherit' });
+        console.log('>>> [SHELL_SUCCESS] REPO ON DISK');
 
-            broadcast('PHASE_3: CONTAINERIZING');
+        // Async from here for the heavy docker image building
+        (async () => {
             const dockerfile = `FROM node:20-bookworm\nWORKDIR /app\nCOPY . .\nRUN npm install\nEXPOSE 3000\nCMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]`;
-            await fs.writeFile(path.join(workDir, 'Dockerfile'), dockerfile);
-
-            broadcast('PHASE_4: DOCKER_BUILD_START');
-            const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
+            fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
             
-            await new Promise((resolve, reject) => {
-                docker.modem.followProgress(buildStream, (err, res) => err ? reject(err) : resolve(res));
+            const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
+            docker.modem.followProgress(buildStream, async (err) => {
+                if (err) return io.emit('build_log', `FATAL: ${err.message}`);
+                const container = await docker.createContainer({ Image: repoName, name: `app-${repoName}-${Date.now()}`, HostConfig: { PublishAllPorts: true } });
+                await container.start();
+                io.emit('build_log', `[SUCCESS] ${repoName} is live.`);
             });
+        })();
 
-            broadcast('PHASE_5: DEPLOYING');
-            const container = await docker.createContainer({
-                Image: repoName,
-                name: `app-${repoName}-${Date.now()}`,
-                HostConfig: { PublishAllPorts: true }
-            });
-            await container.start();
-            broadcast(`[SUCCESS] ${repoName} is live.`);
-
-        } catch (e) {
-            broadcast(`[CRITICAL_ERROR] ${e.message}`);
-            console.error(e);
-        }
-    })();
-
-    return { status: 'BUILD_SEQUENCED', target: repoName };
+        return { status: 'CLONED_BUILD_STARTING' };
+    } catch (e) {
+        console.error('>>> [EXEC_FATAL]', e.message);
+        return { status: 'FAILED', error: e.message };
+    }
 });
 
 fastify.listen({ port: 3000, host: '0.0.0.0' });
