@@ -2,61 +2,64 @@
 <html lang='en'>
 <head>
     <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>AutoLaunch | Spatial OS</title>
+    <title>AutoLaunch | Secure Gate</title>
     <style>
-        :root { --glow: #00ff41; --bg: #050505; }
-        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
-        .header { border-bottom: 2px solid var(--glow); padding: 20px; display: flex; justify-content: space-between; }
-        .container { display: grid; grid-template-columns: 1fr 1fr; height: calc(100vh - 80px); }
-        .input-zone { padding: 40px; border-right: 1px solid #222; }
-        .output-zone { padding: 20px; background: #000; overflow-y: auto; font-size: 0.85rem; }
-        input { background: transparent; border: 1px solid var(--glow); color: var(--glow); padding: 15px; width: 80%; outline: none; box-shadow: 0 0 10px rgba(0,255,65,0.2); }
-        button { background: var(--glow); color: black; border: none; padding: 15px 30px; cursor: pointer; font-weight: bold; margin-left: 10px; }
-        .status-pill { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--glow); font-size: 0.7rem; }
-        .log-entry { margin-bottom: 5px; border-left: 2px solid #333; padding-left: 10px; }
+        body { background: #050505; color: #00ff41; font-family: monospace; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .shield { border: 1px solid #00ff41; padding: 40px; box-shadow: 0 0 20px rgba(0,255,65,0.2); width: 350px; }
+        input { background: #000; border: 1px solid #00ff41; color: #00ff41; padding: 10px; width: 100%; margin-bottom: 10px; }
+        button { width: 106%; background: #00ff41; color: #000; border: none; padding: 10px; cursor: pointer; font-weight: bold; }
+        #main-ui { display: none; width: 100vw; height: 100vh; flex-direction: column; }
     </style>
 </head>
 <body>
-    <div class='header'>
-        <span>AUTOLAUNCH // SPATIAL_HEALTH_OS</span>
-        <span class='status-pill'>SYSTEM_READY</span>
+    <div id='login-gate' class='shield'>
+        <h2>ACCESS_REQUIRED</h2>
+        <input type='text' id='user' placeholder='USERNAME'>
+        <input type='password' id='pass' placeholder='PASSWORD'>
+        <button onclick='login()'>INITIATE_GATE</button>
     </div>
-    <div class='container'>
-        <div class='input-zone'>
-            <h2>DEPLOY REPOSITORY</h2>
-            <p>PASTE GITHUB CLONE COMMAND BELOW:</p>
-            <input type='text' id='gitCmd' placeholder='git clone https://github.com/...'>
-            <button onclick='launch()'>EXECUTE</button>
-        </div>
-        <div class='output-zone' id='logs'>
-            <div class='log-entry'>> INITIALIZING INTERFACE...</div>
+
+    <div id='main-ui'>
+        <div style='padding: 20px; border-bottom: 1px solid #333;'>SYSTEM // ACTIVE_SESSIONS</div>
+        <div style='padding: 40px;'>
+            <input type='text' id='gitCmd' placeholder='PASTE CLONE COMMAND'>
+            <button onclick='launch()'>EXECUTE_BUILD</button>
         </div>
     </div>
+
     <script>
-        function log(msg) {
-            const div = document.createElement('div');
-            div.className = 'log-entry';
-            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            document.getElementById('logs').prepend(div);
+        const token = localStorage.getItem('at_token');
+        if (token) showUI();
+
+        async function login() {
+            const username = document.getElementById('user').value;
+            const password = document.getElementById('pass').value;
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.token) {
+                localStorage.setItem('at_token', data.token);
+                showUI();
+            } else alert('UNAUTHORIZED');
+        }
+
+        function showUI() {
+            document.getElementById('login-gate').style.display = 'none';
+            document.getElementById('main-ui').style.display = 'flex';
         }
 
         async function launch() {
             const cmd = document.getElementById('gitCmd').value;
-            log(`CLONE_REQUEST_RECEIVED: ${cmd}`);
-            
-            try {
-                const response = await fetch('/api/launch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cloneCommand: cmd })
-                });
-                const data = await response.json();
-                log(`ENGINE_STATUS: ${data.status}`);
-                if(data.endpoint) log(`DEPLOYED_TO: ${data.endpoint}`);
-            } catch (err) {
-                log('FATAL: ENGINE_OFFLINE');
-            }
+            const res = await fetch('/api/launch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('at_token')}` },
+                body: JSON.stringify({ cloneCommand: cmd })
+            });
+            const data = await res.json();
+            alert(`DEPLOYED AT PORT: ${data.port}`);
         }
     </script>
 </body>
