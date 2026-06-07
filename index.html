@@ -7,11 +7,10 @@
         :root { --glow: #00ff41; --bg: #030303; --panel: rgba(15, 15, 15, 0.9); }
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
-        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; }
-        .viewport { position: relative; }
-        .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); }
+        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+        .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; border-top: 1px solid var(--glow); }
         .card { border: 1px solid #333; padding: 20px; }
-        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; margin-top: 10px; }
+        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
         button { background: var(--glow); color: #000; border: none; padding: 10px; width: 100%; cursor: pointer; margin-top: 10px; font-weight: bold; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; text-align: center; }
     </style>
@@ -20,26 +19,30 @@
     <div id='wizard' class='setup-wizard'>
         <div style='max-width: 500px;'>
             <h1>ESTABLISH_LINK</h1>
-            <p style='color: #666;'>ENTER VPS IP OR TUNNEL DOMAIN</p>
-            <input type='text' id='vpsIp' placeholder='e.g. api.yourdomain.com'>
+            <p style='color: #666;'>PASTE YOUR NGROK URL OR VPS IP</p>
+            <input type='text' id='vpsIp' placeholder='https://...ngrok-free.app' onkeyup='if(event.key==="Enter") syncBackend()'>
             <button onclick='syncBackend()'>ESTABLISH_LINK</button>
         </div>
     </div>
 
     <div class='grid-layout'>
         <div class='sidebar'>
-            <div style='display: flex; justify-content: space-between;'>
+            <div style='display:flex; justify-content:space-between; align-items:center; font-size:10px;'>
                 <span>SYSTEM_STATUS: <span id='hw-status' style='color:red;'>OFFLINE</span></span>
-                <button style='width: auto; padding: 2px 8px; margin: 0;' onclick='checkPulse()'>RETRY</button>
+                <button style='width:auto; padding: 4px 8px; font-size:9px;' onclick='checkPulse()'>REFRESH</button>
             </div>
             <div class='card'>
                 <h3>1. TARGET_REPOSITORY</h3>
                 <input type='text' id='gitUrl' placeholder='PASTE CLONE COMMAND'>
-                <button onclick='log("CLONE_SEQUENCE_INITIATED...")'>READY_TO_COLD_START</button>
             </div>
+            <div class='card'>
+                <h3>2. ENVIRONMENTAL_INJECTION</h3>
+                <div id='env-fields'></div>
+            </div>
+            <button onclick='executeBuild()'>EXECUTE_COLD_START</button>
         </div>
         <div class='viewport' id='graph'></div>
-        <div class='console' id='terminal'>> AWAITING_HANDSHAKE...</div>
+        <div class='console' id='terminal'>> AWAITING_CONNECTION...</div>
     </div>
 
     <script>
@@ -50,19 +53,24 @@
         }
 
         async function checkPulse() {
-            let base = localStorage.getItem('at_base');
+            const base = localStorage.getItem('at_base');
             if(!base) { document.getElementById('wizard').style.display='flex'; return; }
             
             log(`CONNECTING_TO: ${base}`);
             try {
-                const res = await fetch(`${base}/`);
+                // Added ngrok-skip-browser-warning header to bypass the intervention page
+                const res = await fetch(`${base}/`, {
+                    headers: { 'ngrok-skip-browser-warning': 'true' }
+                });
                 if(res.ok) {
                     document.getElementById('hw-status').innerText = 'ONLINE';
                     document.getElementById('hw-status').style.color = '#00ff41';
                     document.getElementById('wizard').style.display = 'none';
-                    log('HANDSHAKE_SUCCESSFUL');
+                    log('HANDSHAKE_SUCCESSFUL: SYSTEM_STABLE');
+                } else {
+                    throw new Error();
                 }
-            } catch (e) { log('ERR: CONNECTION_FAILED'); }
+            } catch (e) { log('ERR: CONNECTION_FAILED. RETRYING...'); }
         }
 
         function syncBackend() {
