@@ -1,12 +1,17 @@
-const fastify = require('fastify')({ logger: true });
+const fastify = require('fastify')({ logger: false });
 const Docker = require('dockerode');
-const fs = require('fs-extra');
-const path = require('path');
 const SimpleGit = require('simple-git');
+const path = require('path');
+const fs = require('fs-extra');
 const { getUniversalDockerfile } = require('./engine/universal-builder');
 
 const docker = new Docker();
 const git = SimpleGit();
+
+// Initialize WebSockets
+const io = require('socket.io')(fastify.server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
 
 fastify.register(require('@fastify/cors'), { origin: true });
 
@@ -14,50 +19,46 @@ fastify.get('/', async () => { return { status: 'ONLINE' }; });
 
 fastify.post('/api/launch', async (req, reply) => {
     const { cloneCommand, githubToken } = req.body;
-    
-    // Clean the URL: Remove trailing slashes and common junk
-    const cleanUrl = cloneCommand.trim().replace(/\/+$/, '');
-    const repoMatch = cleanUrl.match(/github\.com\/([\w-]+\/[\w.-]+)/);
-    
+    const repoMatch = cloneCommand.match(/https:\/\/github\.com\/([\w-]+\/[\w.-]+)/);
     if (!repoMatch) return { error: 'INVALID_URL' };
 
-    let repoPath = repoMatch[1];
-    if (repoPath.endsWith('.git')) repoPath = repoPath.slice(0, -4);
-
+    const repoPath = repoMatch[1].replace('.git', '');
     const repoName = repoPath.split('/').pop().toLowerCase();
     const workDir = path.join(__dirname, 'tmp', repoName);
-
-    // Construct Authenticated URL correctly
-    const finalCloneUrl = githubToken 
-        ? `https://${githubToken}@github.com/${repoPath}.git` 
-        : `https://github.com/${repoPath}.git`;
+    const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : cloneCommand;
 
     process.nextTick(async () => {
+        const broadcast = (msg) => { io.emit('build_log', `[${repoName.toUpperCase()}] ${msg}`); console.log(msg); };
+
         try {
-            console.log(`[BOOT] Deploying ${repoName}`);
+            broadcast('STAGING_INITIATED');
             if (fs.existsSync(workDir)) fs.removeSync(workDir);
             
-            console.log(`[1/3] Cloning from: ${finalCloneUrl.replace(githubToken, '***')}`);
-            await git.clone(finalCloneUrl, workDir);
+            broadcast('CLONING_REPOSITORY...');
+            await git.clone(repoUrl, workDir);
 
-            console.log(`[2/3] Building...`);
+            broadcast('GENERATING_RUNTIME_ENVIRONMENT...');
             const dockerfile = getUniversalDockerfile(workDir);
             fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
 
+            broadcast('BUILDING_IMAGE (This may take minutes)...');
             const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
             
-            docker.modem.followProgress(buildStream, async (err) => {
-                if (err) return console.error(`[FATAL] Build failed:`, err);
-                const container = await docker.createContainer({
+            docker.modem.followProgress(buildStream, 
+              (err) => {
+                if (err) return broadcast(`FATAL_ERROR: ${err.message}`);
+                broadcast('IMAGE_READY. PROVISIONING_CONTAINER...');
+                docker.createContainer({
                     Image: repoName,
-                    name: `app-${repoName}-${Date.now()}`,
                     HostConfig: { PublishAllPorts: true }
-                });
-                await container.start();
-                console.log(`[SYSTEM] ${repoName} LIVE.`);
-            });
+                }).then(c => c.start()).then(() => broadcast('DEPLOYMENT_SUCCESSFUL. SYSTEM_LIVE.'));
+              },
+              (event) => {
+                if (event.stream) broadcast(event.stream.trim());
+              }
+            );
         } catch (err) {
-            console.error(`[ERROR] Clone failed:`, err.message);
+            broadcast(`ERROR: ${err.message}`);
         }
     });
 
