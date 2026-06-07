@@ -3,130 +3,76 @@
 <head>
     <meta charset='UTF-8'>
     <title>AUTOLAUNCH // SPATIAL OS</title>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
-    <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
     <style>
         :root { --glow: #00ff41; --bg: #030303; --panel: rgba(15, 15, 15, 0.9); }
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
-        
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
-        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .viewport { position: relative; border-bottom: 1px solid #222; }
+        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; }
+        .viewport { position: relative; }
         .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); }
-
-        .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
-        input, textarea { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; opacity: 0.8; }
-        button { background: var(--glow); color: #000; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; transition: opacity 0.2s; }
-        button:hover { opacity: 0.8; }
-        button.secondary { background: transparent; border: 1px solid #444; color: #888; font-size: 10px; }
-        
-        .status-container { display: flex; justify-content: space-between; align-items: center; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; }
+        .card { border: 1px solid #333; padding: 20px; }
+        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; margin-top: 10px; }
+        button { background: var(--glow); color: #000; border: none; padding: 10px; width: 100%; cursor: pointer; margin-top: 10px; font-weight: bold; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: flex; align-items: center; justify-content: center; text-align: center; }
     </style>
 </head>
 <body>
-
-    <!-- Wizard only shows if no Backend IP is set -->
-    <div id='wizard' class='setup-wizard' style='display:none;'>
+    <div id='wizard' class='setup-wizard'>
         <div style='max-width: 500px;'>
-            <h1 style='letter-spacing: 5px;'>SYNC_BACKEND</h1>
-            <p style='color: #666;'>PASTE YOUR VPS IP ADDRESS TO LINK HARDWARE POWER</p>
-            <input type='text' id='vpsIp' placeholder='e.g. 148.230.81.199'>
+            <h1>ESTABLISH_LINK</h1>
+            <p style='color: #666;'>ENTER VPS IP OR TUNNEL DOMAIN</p>
+            <input type='text' id='vpsIp' placeholder='e.g. api.yourdomain.com'>
             <button onclick='syncBackend()'>ESTABLISH_LINK</button>
         </div>
     </div>
 
     <div class='grid-layout'>
         <div class='sidebar'>
-            <div class='status-container'>
+            <div style='display: flex; justify-content: space-between;'>
                 <span>SYSTEM_STATUS: <span id='hw-status' style='color:red;'>OFFLINE</span></span>
-                <button class='secondary' style='width: auto; margin: 0; padding: 4px 8px;' onclick='checkPulse()'>REFRESH_SYNC</button>
+                <button style='width: auto; padding: 2px 8px; margin: 0;' onclick='checkPulse()'>RETRY</button>
             </div>
-            
             <div class='card'>
                 <h3>1. TARGET_REPOSITORY</h3>
-                <input type='text' id='gitUrl' placeholder='PASTE CLONE COMMAND' onchange='analyzeRepo()'>
-            </div>
-
-            <div class='card' id='env-card' style='display:none;'>
-                <h3>2. ENV_VARIABLES_REQUIRED</h3>
-                <div id='env-fields'></div>
-            </div>
-
-            <button id='launch-btn' style='display:none;' onclick='executeBuild()'>EXECUTE_COLD_START</button>
-            
-            <div style='margin-top: auto;'>
-                <button class='secondary' onclick='resetBackend()'>RESET_BACKEND_LINK</button>
+                <input type='text' id='gitUrl' placeholder='PASTE CLONE COMMAND'>
+                <button onclick='log("CLONE_SEQUENCE_INITIATED...")'>READY_TO_COLD_START</button>
             </div>
         </div>
-
         <div class='viewport' id='graph'></div>
-        <div class='console' id='terminal'>> INITIALIZING SYSTEM...</div>
+        <div class='console' id='terminal'>> AWAITING_HANDSHAKE...</div>
     </div>
 
     <script>
-        const statusText = document.getElementById('hw-status');
-        const term = document.getElementById('terminal');
-
         function log(msg) {
-            const div = document.createElement('div');
-            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            term.prepend(div);
+            const d = document.createElement('div');
+            d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            document.getElementById('terminal').prepend(d);
         }
 
         async function checkPulse() {
-            const base = localStorage.getItem('at_base');
-            if(!base) {
-                document.getElementById('wizard').style.display = 'flex';
-                return;
-            }
+            let base = localStorage.getItem('at_base');
+            if(!base) { document.getElementById('wizard').style.display='flex'; return; }
             
-            log(`PINGING_BACKEND: ${base}`);
+            log(`CONNECTING_TO: ${base}`);
             try {
-                const res = await fetch(`${base}/`, { mode: 'cors' });
+                const res = await fetch(`${base}/`);
                 if(res.ok) {
-                    statusText.innerText = 'ONLINE';
-                    statusText.style.color = '#00ff41';
-                    log('HANDSHAKE_SUCCESSFUL: SYSTEM_STABLE');
+                    document.getElementById('hw-status').innerText = 'ONLINE';
+                    document.getElementById('hw-status').style.color = '#00ff41';
                     document.getElementById('wizard').style.display = 'none';
-                } else {
-                    throw new Error('UNREACHABLE');
+                    log('HANDSHAKE_SUCCESSFUL');
                 }
-            } catch (e) {
-                statusText.innerText = 'DISCONNECTED';
-                statusText.style.color = 'red';
-                log('ERR: BACKEND_UNREACHABLE. CHECK FIREWALL OR MIXED CONTENT.');
-            }
+            } catch (e) { log('ERR: CONNECTION_FAILED'); }
         }
 
         function syncBackend() {
-            let ip = document.getElementById('vpsIp').value.trim();
-            if(!ip) return;
-            if(!ip.startsWith('http')) ip = `http://${ip}:3000`;
-            localStorage.setItem('at_base', ip);
+            let val = document.getElementById('vpsIp').value.trim();
+            if(!val.startsWith('http')) val = `https://${val}`;
+            localStorage.setItem('at_base', val);
             checkPulse();
         }
 
-        function resetBackend() {
-            localStorage.removeItem('at_base');
-            location.reload();
-        }
-
-        // Auto-run on load
         checkPulse();
-
-        function analyzeRepo() {
-            document.getElementById('env-card').style.display = 'block';
-            document.getElementById('launch-btn').style.display = 'block';
-            document.getElementById('env-fields').innerHTML = '<input type="text" placeholder="DATABASE_URL">';
-            log('REPO_ANALYSIS_COMPLETE: READY_FOR_DEPLOY');
-        }
-
-        // Three.js visual filler for now
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-        camera.position.z = 5;
     </script>
 </body>
 </html>
