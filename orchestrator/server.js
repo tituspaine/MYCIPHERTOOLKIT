@@ -11,10 +11,9 @@ const io = require('socket.io')(fastify.server, { cors: { origin: '*' } });
 
 fastify.register(require('@fastify/cors'), { origin: true });
 
-// API: Get all running and cached projects
 fastify.get('/api/projects', async () => {
     const containers = await docker.listContainers({ all: true });
-    const apps = containers
+    return containers
         .filter(c => c.Names[0].startsWith('/app-'))
         .map(c => ({
             name: c.Image,
@@ -22,14 +21,32 @@ fastify.get('/api/projects', async () => {
             status: c.State,
             port: c.Ports[0]?.PublicPort || 'PENDING'
         }));
-    return apps;
+});
+
+// HARDWARE PURGE ENDPOINT
+fastify.post('/api/destroy', async (req, reply) => {
+    const { repoName } = req.body;
+    const containers = await docker.listContainers({ all: true });
+    
+    for (const c of containers) {
+        if (c.Image === repoName) {
+            const container = docker.getContainer(c.Id);
+            await container.stop().catch(() => {});
+            await container.remove().catch(() => {});
+        }
+    }
+
+    const workDir = path.join(__dirname, 'tmp', repoName);
+    if (fs.existsSync(workDir)) fs.removeSync(workDir);
+
+    return { status: 'PURGED' };
 });
 
 fastify.get('/', async () => { return { status: 'ONLINE' }; });
 
 fastify.post('/api/launch', async (req, reply) => {
     const { cloneCommand, githubToken } = req.body;
-    const repoMatch = cloneCommand.match(/github\.com\/([\w-]+\/[\w.-]+)/);
+    const repoMatch = cloneCommand.match(/https:\/\/github\.com\/([\w-]+\/[\w.-]+)/);
     if (!repoMatch) return { error: 'INVALID_URL' };
 
     let repoPath = repoMatch[1].replace('.git', '');
@@ -38,30 +55,27 @@ fastify.post('/api/launch', async (req, reply) => {
     const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : `https://github.com/${repoPath}.git`;
 
     process.nextTick(async () => {
-        const broadcast = (msg) => io.emit('build_log', msg);
+        const broadcast = (msg) => { io.emit('build_log', msg); console.log(msg); };
         try {
-            // 1. Build Cache Logic
             if (fs.existsSync(workDir)) {
-                broadcast(`CACHE_HIT: ${repoName} already exists. Pulling updates...`);
+                broadcast(`CACHE_HIT: ${repoName}. Updating...`);
                 await SimpleGit(workDir).pull();
             } else {
                 broadcast(`CLONING: ${repoName}...`);
                 await git.clone(repoUrl, workDir);
             }
 
-            // 2. Build Image
-            broadcast('BUILDING_CONTAINER...');
             const dockerfile = getUniversalDockerfile(workDir);
             fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
 
+            broadcast('BUILD_STARTING...');
             const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
             
             docker.modem.followProgress(buildStream, async (err) => {
                 if (err) return broadcast(`BUILD_FAILED: ${err.message}`);
                 
-                // Remove old instances before starting new one
-                const oldContainers = await docker.listContainers({ all: true });
-                for (const c of oldContainers) {
+                const containers = await docker.listContainers({ all: true });
+                for (const c of containers) {
                     if (c.Image === repoName) {
                         const container = docker.getContainer(c.Id);
                         await container.stop().catch(() => {});
@@ -69,7 +83,6 @@ fastify.post('/api/launch', async (req, reply) => {
                     }
                 }
 
-                broadcast('PROVISIONING_PORT...');
                 const container = await docker.createContainer({
                     Image: repoName,
                     name: `app-${repoName}-${Date.now()}`,
@@ -78,12 +91,13 @@ fastify.post('/api/launch', async (req, reply) => {
 
                 await container.start();
                 const details = await container.inspect();
-                const port = details.NetworkSettings.Ports['3000/tcp']?.[0].HostPort || details.NetworkSettings.Ports['8080/tcp']?.[0].HostPort;
+                const port = details.NetworkSettings.Ports['3000/tcp']?.[0].HostPort || 
+                             details.NetworkSettings.Ports['8080/tcp']?.[0].HostPort || 'DYN';
                 broadcast(`DEPLOYMENT_SUCCESSFUL. PORT:${port}`);
-                io.emit('project_ready', { name: repoName, port: port });
+                io.emit('project_ready', { name: repoName, port });
             });
         } catch (err) {
-            broadcast(`FATAL: ${err.message}`);
+            broadcast(`ERROR: ${err.message}`);
         }
     });
     return { status: 'INITIATED' };
