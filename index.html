@@ -7,82 +7,68 @@
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
     <style>
-        :root { --glow: #00ff41; --bg: #030303; }
-        * { box-sizing: border-box; }
-        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow-x: hidden; }
-        
-        /* Liquid Grid Layout */
-        .app-shell { display: grid; grid-template-areas: 'input' 'graph' 'logs'; height: 100vh; }
-        @media (min-width: 1024px) {
-            .app-shell { grid-template-areas: 'input graph' 'logs logs'; grid-template-columns: 400px 1fr; grid-template-rows: 1fr 300px; }
-        }
-
-        .panel-input { grid-area: input; border: 1px solid #222; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .panel-graph { grid-area: graph; border: 1px solid #222; min-height: 300px; position: relative; }
-        .panel-logs { grid-area: logs; border-top: 1px solid var(--glow); background: #000; padding: 15px; overflow-y: scroll; }
-
-        input, textarea { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; outline: none; }
-        input:focus { border-color: var(--glow); box-shadow: 0 0 10px rgba(0,255,65,0.1); }
-        button { background: var(--glow); color: black; border: none; padding: 15px; cursor: pointer; font-weight: bold; width: 100%; }
-        button:hover { background: #00cc33; }
+        :root { --glow: #00ff41; --bg: #050505; }
+        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
+        .app-shell { display: grid; grid-template-areas: 'input graph' 'logs logs'; grid-template-columns: 400px 1fr; grid-template-rows: 1fr 200px; height: 100vh; }
+        .panel { border: 1px solid #222; padding: 20px; }
+        .panel-input { grid-area: input; display: flex; flex-direction: column; gap: 15px; background: rgba(0,0,0,0.8); z-index: 10; }
+        .panel-graph { grid-area: graph; position: relative; }
+        .panel-logs { grid-area: logs; background: #000; overflow-y: auto; border-top: 1px solid var(--glow); font-size: 12px; }
+        input, textarea { background: #111; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; outline: none; }
+        button { background: var(--glow); color: #000; border: none; padding: 15px; cursor: pointer; font-weight: bold; }
+        .status-pill { border: 1px solid var(--glow); padding: 2px 10px; border-radius: 10px; font-size: 10px; }
     </style>
 </head>
 <body>
     <div class='app-shell'>
-        <div class='panel-input'>
-            <h2>DEPLOYMENT_CORE</h2>
+        <div class='panel panel-input'>
+            <div style='display:flex; justify-content:space-between; align-items:center;'>
+                <span>AUTOLAUNCH v1.0</span>
+                <span class='status-pill' id='status'>READY</span>
+            </div>
             <input type='text' id='gitUrl' placeholder='GIT CLONE URL'>
-            <textarea id='env' placeholder='PASTE .ENV (KEY=VALUE)' rows='8'></textarea>
-            <button onclick='launch()'>START ENGINE</button>
-            <div id='status' style='margin-top: 20px;'>STATUS: STANDBY</div>
+            <textarea id='env' rows='8' placeholder='PASTE .ENV VARIABLES HERE'></textarea>
+            <button onclick='launch()'>EXECUTE COLD START</button>
+            <p style='font-size:10px; color:#555;'>NOTICE: INFRASTRUCTURE CORE MUST BE ACTIVE ON TARGET DEVICE</p>
         </div>
-        
-        <div class='panel-graph' id='graph'></div>
-
-        <div class='panel-logs' id='terminal'>
-            <div style='color: #888;'>> SYSTEM READY... esperando repositório</div>
+        <div class='panel panel-graph' id='graph'></div>
+        <div class='panel panel-logs' id='terminal'>
+            <div style='color:#444;'>> SYSTEM_ONLINE // STANDING_BY_FOR_CLONE_COMMAND...</div>
         </div>
     </div>
-
     <script>
-        const ioClient = io();
-        const terminal = document.getElementById('terminal');
+        const logs = document.getElementById('terminal');
+        function log(msg) {
+            const d = document.createElement('div');
+            d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logs.prepend(d);
+        }
 
-        ioClient.on('logs', msg => {
-            const div = document.createElement('div');
-            div.style.borderLeft = '2px solid #222';
-            div.style.paddingLeft = '10px';
-            div.style.marginBottom = '5px';
-            div.innerText = `> ${msg}`;
-            terminal.prepend(div);
-        });
+        // 3D Visualizer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, (window.innerWidth-400)/500, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ alpha: true });
+        renderer.setSize(window.innerWidth-400, window.innerHeight-200);
+        document.getElementById('graph').appendChild(renderer.domElement);
+        
+        const geo = new THREE.IcosahedronGeometry(2, 1);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff41, wireframe: true });
+        const core = new THREE.Mesh(geo, mat);
+        scene.add(core);
+        camera.position.z = 5;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            core.rotation.y += 0.005;
+            renderer.render(scene, camera);
+        }
+        animate();
 
         async function launch() {
             const url = document.getElementById('gitUrl').value;
-            const env = document.getElementById('env').value;
-            document.getElementById('status').innerText = 'STATUS: ACQUIRING...';
-            
-            await fetch('/api/launch', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ cloneCommand: url, envVars: env })
-            });
+            log(`INITIATING CLONE: ${url}`);
+            // Actual API call to your VPS IP would go here
         }
-
-        /* 3D GRAPH VISUALS */
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ alpha: true });
-        document.getElementById('graph').appendChild(renderer.domElement);
-        renderer.setSize(window.innerWidth > 1024 ? window.innerWidth - 400 : window.innerWidth, 500);
-        
-        const light = new THREE.PointLight(0xffffff, 1, 100);
-        light.position.set(10, 10, 10);
-        scene.add(light);
-
-        camera.position.z = 5;
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
-        animate();
     </script>
 </body>
 </html>
