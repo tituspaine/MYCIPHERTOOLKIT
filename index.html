@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AutoLaunch OS</title>
+    <style>
+        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; padding: 50px; }
+        .terminal { border: 1px solid #00ff41; padding: 20px; box-shadow: 0 0 15px #00ff41; }
+        input { background: transparent; border: none; border-bottom: 1px solid #00ff41; color: #00ff41; width: 70%; outline: none; font-size: 1.2em; }
+        button { background: #00ff41; color: black; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; }
+        #logs { margin-top: 20px; color: #888; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class='terminal'>
+        <h1>AUTOLAUNCH_SYSTEM_V1.0</h1>
+        <p>ENTER GITHUB CLONE COMMAND:</p>
+        <input type='text' id='gitCmd' placeholder='git clone https://github.com/...'>
+        <button onclick='launch()'>EXECUTE</button>
+        <div id='logs'>SYSTEM IDLE...</div>
+    </div>
+
+    <script>
+        async function launch() {
+            const cmd = document.getElementById('gitCmd').value;
+            const logDiv = document.getElementById('logs');
+            logDiv.innerText = 'INITIALIZING CLONE SEQUENCE...';
+            
+            try {
+                const response = await fetch('/api/launch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cloneCommand: cmd })
+                });
+                const data = await response.json();
+                logDiv.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                logDiv.innerText = 'ERROR: CONNECTION_FAILED';
+            }
+        }
+    </script>
+</body>
+</html>
