@@ -1,12 +1,10 @@
 const fastify = require('fastify')({ logger: true });
 const Docker = require('dockerode');
-const SimpleGit = require('simple-git');
+const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs-extra');
-const { getUniversalDockerfile } = require('./engine/universal-builder');
 
 const docker = new Docker();
-const git = SimpleGit();
 const io = require('socket.io')(fastify.server, { cors: { origin: '*' } });
 
 fastify.register(require('@fastify/cors'), { origin: true });
@@ -20,8 +18,8 @@ fastify.get('/api/projects', async () => {
 });
 
 fastify.post('/api/launch', async (req, reply) => {
-    console.log('>>> [HANDSHAKE] COLD_START RECEIVED');
     const { cloneCommand, githubToken } = req.body;
+    console.log('>>> EXECUTION_START');
     
     const repoMatch = cloneCommand.match(/github\.com\/([\w-]+\/[\w.-]+)/);
     if (!repoMatch) return { error: 'INVALID_URL' };
@@ -29,44 +27,42 @@ fastify.post('/api/launch', async (req, reply) => {
     const repoPath = repoMatch[1].replace('.git', '');
     const repoName = repoPath.split('/').pop().toLowerCase();
     const workDir = path.join(__dirname, 'tmp', repoName);
-    const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : `https://github.com/${repoPath}.git`;
+    const repoUrl = githubToken ? `https://${githubToken}@github.com/${repoPath}.git` : cloneCommand;
 
     process.nextTick(async () => {
-        const broadcast = (m) => { io.emit('build_log', m); console.log(`[BUILD_LOG] ${m}`); };
+        const broadcast = (m) => { io.emit('build_log', m); console.log(`[LOG] ${m}`); };
         try {
-            broadcast(`[STAGING] Preparing directory for ${repoName}...`);
-            await fs.ensureDir(path.join(__dirname, 'tmp'));
-            if (fs.existsSync(workDir)) await fs.remove(workDir);
-            
-            broadcast('[CLONING] Harvesting repository code...');
-            await git.clone(repoUrl, workDir).catch(err => {
-                throw new Error(`Git Clone Failed: ${err.message}`);
-            });
-            
-            broadcast('[ENGINE] Generating universal Docker configuration...');
-            const dockerfile = getUniversalDockerfile(workDir);
+            broadcast(`[STAGING] Cleaning ${repoName}...`);
+            if (fs.existsSync(workDir)) fs.removeSync(workDir);
+            fs.ensureDirSync(workDir);
+
+            broadcast('[CLONING] Firing shell-level git clone...');
+            execSync(`git clone ${repoUrl} ${workDir}`, { stdio: 'inherit' });
+
+            broadcast('[CONTAINERIZING] Creating Dockerfile...');
+            const dockerfile = `FROM node:20-bookworm\nWORKDIR /app\nCOPY . .\nRUN npm install\nEXPOSE 3000\nCMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]`;
             fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
-            
-            broadcast('[BUILD] Starting Docker build process...');
+
+            broadcast('[BUILDING] Constructing image...');
             const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
             
             docker.modem.followProgress(buildStream, async (err) => {
-                if (err) return broadcast(`[FATAL] Docker Build Error: ${err.message}`);
+                if (err) return broadcast(`[FATAL] Build Error: ${err.message}`);
                 
-                broadcast('[DEPLOY] Initializing high-performance container...');
-                const container = await docker.createContainer({ 
-                    Image: repoName, 
+                broadcast('[FINALIZING] Launching instance...');
+                const container = await docker.createContainer({
+                    Image: repoName,
                     name: `app-${repoName}-${Date.now()}`,
-                    HostConfig: { PublishAllPorts: true } 
+                    HostConfig: { PublishAllPorts: true }
                 });
                 await container.start();
-                broadcast(`[SUCCESS] ${repoName} is now live.`);
+                broadcast(`[SUCCESS] ${repoName} is live.`);
             });
         } catch (e) {
-            broadcast(`[CRITICAL_FAILURE] ${e.message}`);
+            broadcast(`[CRITICAL_EXEC_ERROR] ${e.message}`);
         }
     });
-    return { status: 'BUILD_SEQUENCED' };
+    return { server_status: 'PROCESSING' };
 });
 
 fastify.listen({ port: 3000, host: '0.0.0.0' });
