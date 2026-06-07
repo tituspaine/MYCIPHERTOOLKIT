@@ -1,16 +1,13 @@
 version: '3.8'
 
 services:
-  autolaunch-core:
-    build: .
+  orchestrator:
+    build: 
+      context: .
+      dockerfile: orchestrator/Dockerfile
     container_name: autolaunch_engine
-    restart: always
-    ports:
-      - "3000:3000"
-      - "4050-4100:4050-4100" # Shifted start from 4000 to 4050
+    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./storage:/usr/src/app/orchestrator/tmp
-    environment:
-      - NODE_ENV=production
-      - PLATFORM_SECRET=TRP_SECURE_888
+      - ./orchestrator:/usr/src/app/orchestrator
+    restart: always
