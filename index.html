@@ -5,108 +5,113 @@
     <title>AUTOLAUNCH // SPATIAL OS</title>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <style>
-        :root { --glow: #00ff41; --bg: #030303; --panel: rgba(15, 15, 15, 0.9); }
-        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
-        .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
-        .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .viewport { background: #000; overflow-y: auto; padding: 40px; position: relative; }
-        /* FIXED CONTAINER FOR CARDS */
-        #node-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 25px; width: 100%; }
-        .console { background: #000; padding: 20px; color: #666; font-size: 11px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); line-height: 1.5; }
-        .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
-        .project-tab { border: 1px solid var(--glow); background: #080808; padding: 20px; box-shadow: 0 0 15px rgba(0,255,65,0.2); transition: 0.3s; }
-        .open-btn { display: block; border: 1px solid var(--glow); background: var(--glow); color: #000; text-align: center; padding: 12px; text-decoration: none; font-weight: bold; margin-top: 15px; cursor: pointer; width: 100%; font-family: inherit; }
-        .destroy-btn { display: block; border: 1px solid #ff4444; color: #ff4444; text-align: center; padding: 8px; text-decoration: none; font-size: 10px; margin-top: 10px; cursor: pointer; background: transparent; width: 100%; }
-        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 15px; width: 100%; box-sizing: border-box; margin-top: 10px; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 15px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        :root { --glow: #00ff41; --bg: #030303; }
+        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; }
+        .header { border-bottom: 2px solid #222; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
+        .manifest-container { max-width: 1200px; margin: 0 auto; }
+        .project-row { background: #0a0a0a; border: 1px solid var(--glow); padding: 25px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 0 15px rgba(0,255,65,0.1); }
+        .project-info { flex: 1; }
+        .project-name { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+        .project-meta { font-size: 10px; opacity: 0.5; text-transform: uppercase; }
+        .actions { display: flex; gap: 15px; }
+        .btn-open { background: var(--glow); color: #000; border: none; padding: 15px 30px; font-weight: bold; cursor: pointer; font-family: inherit; font-size: 16px; }
+        .btn-purge { background: transparent; border: 1px solid #ff4444; color: #ff4444; padding: 15px 20px; cursor: pointer; font-family: inherit; font-size: 12px; }
+        .sidebar-simple { background: #080808; border: 1px solid #111; padding: 20px; margin-bottom: 30px; }
+        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 300px; margin-right: 10px; outline: none; }
         .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+        #terminal { background: #000; padding: 15px; color: #444; font-size: 11px; height: 150px; overflow-y: auto; border: 1px solid #111; margin-top: 50px; }
     </style>
 </head>
 <body>
     <div id='wizard' class='setup-wizard'>
-        <div style='max-width: 400px; text-align: center;'>
+        <div style='text-align: center;'>
             <h1 style='letter-spacing: 5px;'>SYSTEM_AUTH</h1>
-            <input type='text' id='vpsIp' placeholder='Ngrok URL (https://...ngrok-free.dev)'>
-            <button onclick='syncBackend()'>INITIATE_LINK</button>
+            <input type='text' id='vpsIp' placeholder='Ngrok URL'>
+            <button onclick='syncBackend()' style='background: var(--glow); padding: 15px 30px; border:none; cursor:pointer; font-weight:bold;'>INITIATE_LINK</button>
         </div>
     </div>
-    <div class='grid-layout'>
-        <div class='sidebar'>
-            <div style='display:flex; justify-content:space-between;'>
-                <span>OS_STATUS:</span>
-                <span id='hw-status' style='color:red;'>OFFLINE</span>
+
+    <div class='manifest-container'>
+        <div class='header'>
+            <div>
+                <h1 style='margin:0;'>MYCIPHER_DASHBOARD</h1>
+                <span id='hw-status' style='color:red; font-size:12px;'>OFFLINE</span>
             </div>
-            <div class='card'>
-                <h3>DEPLOY_NEW_INTERFACE</h3>
-                <input type='text' id='gitUrl' placeholder='REPOS_URL (.git)'>
-                <input type='password' id='githubToken' placeholder='GITHUB_PAT'>
-                <button onclick='executeColdStart()'>EXECUTE_COLD_START</button>
-            </div>
-            <div id='active-count' style='font-size: 10px; opacity: 0.5;'>SCANNING HARDWARE...</div>
-            <button onclick='loadExisting()' style='background: #111; color: #fff; border: 1px solid #222; font-size: 10px; padding: 10px;'>FORCE RE-SCAN</button>
-            <button style='opacity:0.3; font-size:10px;' onclick='localStorage.clear(); location.reload();'>FULL_UI_RESET</button>
+            <button onclick='localStorage.clear(); location.reload();' style='background:transparent; border:1px solid #333; color:#333; cursor:pointer;'>HARD_RESET</button>
         </div>
-        <div class='viewport'>
-            <div id='node-container'></div>
+
+        <div class='sidebar-simple'>
+            <h3>LAUNCH_NEW_NODE</h3>
+            <input type='text' id='gitUrl' placeholder='GitHub Repo URL'>
+            <input type='password' id='githubToken' placeholder='PAT (token)' style='width:200px;'>
+            <button onclick='executeColdStart()' style='background: var(--glow); padding: 12px 20px; border:none; font-weight:bold; cursor:pointer;'>COLD_START</button>
         </div>
-        <div class='console' id='terminal'>> SYSTEM_BOOT_COMPLETE...</div>
+
+        <h2>ACTIVE_PROJECTS</h2>
+        <div id='project-list'>
+            <p style='opacity:0.3;'>No active nodes detected. Use Cold Start to deploy.</p>
+        </div>
+
+        <div id='terminal'>> INITIALIZING SYSTEM...</div>
     </div>
+
     <script>
-        const log = (m) => {
+        function log(m) {
             const d = document.createElement('div');
             d.innerText = `> ${m}`;
             document.getElementById('terminal').prepend(d);
-        };
-        function addProjectCard(name, port) {
+        }
+
+        function renderProject(name, port) {
             const base = localStorage.getItem('at_base');
             const domain = base.replace('https://', '').replace('http://', '').split('/')[0];
             const appUrl = `${window.location.protocol}//${domain.split(':')[0]}:${port}`;
-            const div = document.createElement('div');
-            div.className = 'project-tab';
-            div.innerHTML = `
-                <div style='font-size: 10px; opacity: 0.5;'>IDENTIFIER</div>
-                <div style='font-size: 20px; font-weight: bold; margin-bottom: 10px; color: #00ff41;'>${name.toUpperCase()}</div>
-                <div style='font-size: 10px; color: #00ff41;'>● STATUS: ACTIVE</div>
-                <div style='font-size: 10px; opacity: 0.5; margin-top:5px;'>PORT: ${port}</div>
-                <button onclick="window.open('${appUrl}', '_blank')" class='open-btn'>OPEN_INTERFACE</button>
-                <div class='destroy-btn' onclick="destroyProject('${name}')">PURGE_INSTANCE</div>
+            
+            const row = document.createElement('div');
+            row.className = 'project-row';
+            row.innerHTML = `
+                <div class='project-info'>
+                    <div class='project-name'>${name.toUpperCase()}</div>
+                    <div class='project-meta'>Status: Operational | Port: ${port}</div>
+                </div>
+                <div class='actions'>
+                    <button onclick="window.open('${appUrl}', '_blank')" class='btn-open'>OPEN_INTERFACE</button>
+                    <button onclick="destroyProject('${name}')" class='btn-purge'>PURGE</button>
+                </div>
             `;
-            document.getElementById('node-container').appendChild(div);
+            document.getElementById('project-list').prepend(row);
         }
+
         async function loadExisting() {
             const base = localStorage.getItem('at_base');
-            if(!base) return;
             try {
                 const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
                 const apps = await res.json();
-                const container = document.getElementById('node-container');
-                container.innerHTML = ''; // CLEAR VIEWPORT
-                document.getElementById('active-count').innerText = `ACTIVE_NODES: ${apps.length}`;
-                apps.forEach(app => { if (app.port) addProjectCard(app.name, app.port); });
-                log(`SYNC: ${apps.length} NODES RENDERED`);
-            } catch (e) { log('SYNC_ERROR_UNREACHABLE'); }
+                const list = document.getElementById('project-list');
+                list.innerHTML = '';
+                if (apps.length === 0) list.innerHTML = '<p opacity:0.3>No nodes active.</p>';
+                apps.forEach(app => { if(app.port) renderProject(app.name, app.port); });
+                document.getElementById('hw-status').innerText = 'SYSTEM_ONLINE';
+                document.getElementById('hw-status').style.color = '#00ff41';
+                log(`SYNC: ${apps.length} NODES LOADED`);
+            } catch (e) { log('API_FETCH_ERROR'); }
         }
-        async function checkPulse() {
-            const base = localStorage.getItem('at_base');
-            if (!base) return;
-            try {
-                const res = await fetch(base + '/', { headers: { 'ngrok-skip-browser-warning': 'true' } });
-                if (res.ok) {
-                    document.getElementById('hw-status').innerText = 'ONLINE';
-                    document.getElementById('hw-status').style.color = '#00ff41';
-                    document.getElementById('wizard').style.display = 'none';
-                    loadExisting();
-                }
-            } catch (e) { log('VPS_OFFLINE'); }
-        }
+
         function syncBackend() {
             let url = document.getElementById('vpsIp').value.trim();
-            if (!url) return;
-            if (!url.startsWith('http')) url = 'https://' + url;
+            if(!url) return;
+            if(!url.startsWith('http')) url = 'https://' + url;
             localStorage.setItem('at_base', url);
-            checkPulse();
+            location.reload();
         }
-        window.onload = checkPulse;
+
+        window.onload = () => {
+            const base = localStorage.getItem('at_base');
+            if (base) {
+                document.getElementById('wizard').style.display = 'none';
+                loadExisting();
+            }
+        }
     </script>
 </body>
 </html>
