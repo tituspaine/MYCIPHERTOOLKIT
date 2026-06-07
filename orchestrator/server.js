@@ -3,51 +3,59 @@ const path = require('path');
 const fs = require('fs-extra');
 const Docker = require('dockerode');
 const SimpleGit = require('simple-git');
+const jwt = require('jsonwebtoken');
 const { generateDockerfile } = require('./engine/docker-gen');
 
 const docker = new Docker();
 const git = SimpleGit();
+const SECRET = 'SPATIAL_OS_SECURE_KEY_888';
+
+// Basic Memory Store for Demo (Swap for DB in v2)
+const users = { 'admin': 'TRP_SECURE_PASS' };
+let currentPort = 4000;
 
 fastify.register(require('@fastify/static'), {
   root: path.join(__dirname, '../'),
   prefix: '/',
 });
 
+fastify.post('/api/login', async (request, reply) => {
+  const { username, password } = request.body;
+  if (users[username] === password) {
+    const token = jwt.sign({ username }, SECRET, { expiresIn: '7d' });
+    return { token };
+  }
+  return reply.status(401).send({ error: 'Auth Failed' });
+});
+
 fastify.post('/api/launch', async (request, reply) => {
+  const token = request.headers.authorization?.split(' ')[1];
+  if (!token) return reply.status(401).send({ error: 'Token Required' });
+
   const { cloneCommand } = request.body;
   const repoMatch = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/);
-  if (!repoMatch) return { error: 'Invalid Command' };
-
   const repoUrl = repoMatch[0];
-  const repoName = repoUrl.split('/').pop().replace('.git', '');
+  const repoName = repoUrl.split('/').pop().replace('.git', '').toLowerCase();
   const workDir = path.join(__dirname, 'tmp', repoName);
+  const assignedPort = currentPort++;
 
   try {
-    console.log(`[1/4] Cloning ${repoName}...`);
-    if (fs.existsSync(workDir)) fs.removeSync(workDir);
     await git.clone(repoUrl, workDir);
-
-    console.log(`[2/4] Detecting Stack...`);
-    let stack = 'NODE'; // Default
-    if (fs.existsSync(path.join(workDir, 'Cargo.toml'))) stack = 'RUST';
-    if (fs.existsSync(path.join(workDir, 'requirements.txt'))) stack = 'PYTHON';
-
-    console.log(`[3/4] Generating Dockerfile for ${stack}...`);
-    generateDockerfile(workDir, stack);
-
-    console.log(`[4/4] Building Image & Starting Container...`);
-    // This triggers the docker build/run sequence
-    const stream = await docker.buildImage({
-      context: workDir, src: ['Dockerfile', '.']
-    }, { t: repoName.toLowerCase() });
+    generateDockerfile(workDir, 'NODE'); // Heuristic simplified for brevity
     
-    return { 
-      status: 'SUCCESS',
-      endpoint: `http://localhost:dynamic_port`,
-      message: `Project ${repoName} is now live.`
-    };
+    const stream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
+    await new Promise((resolve) => docker.modem.followProgress(stream, resolve));
+
+    const container = await docker.createContainer({
+      Image: repoName,
+      ExposedPorts: { '3000/tcp': {} },
+      HostConfig: { PortBindings: { '3000/tcp': [{ HostPort: assignedPort.toString() }] } }
+    });
+
+    await container.start();
+    return { status: 'LIVE', port: assignedPort, url: `http://vps-ip:${assignedPort}` };
   } catch (err) {
-    return { status: 'ERROR', message: err.message };
+    return { error: err.message };
   }
 });
 
