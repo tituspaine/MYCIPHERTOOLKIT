@@ -1,28 +1,29 @@
 const fastify = require('fastify')({ logger: true });
 
-// Fully permissive CORS
-fastify.register(require('@fastify/cors'), {
-  origin: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
-  credentials: true
-});
-
-const Docker = require('dockerode');
-const docker = new Docker();
-
-// Basic Health Check on root
-fastify.get('/', async (request, reply) => {
-  return { status: 'ONLINE', timestamp: new Date().toISOString() };
-});
-
-// Ensure the server listens on ALL interfaces (0.0.0.0)
 const start = async () => {
   try {
+    // Minimal CORS
+    await fastify.register(require('@fastify/cors'), {
+      origin: true
+    });
+
+    // Root Check
+    fastify.get('/', async () => {
+      return { status: 'ONLINE', timestamp: new Date().toISOString() };
+    });
+
+    // Launch API placeholder
+    fastify.post('/api/launch', async (request, reply) => {
+      return { status: 'PENDING' };
+    });
+
+    console.log('BOOT: Attempting to bind to 0.0.0.0:3000...');
     await fastify.listen({ port: 3000, host: '0.0.0.0' });
-    console.log('🚀 Platform Brain live on port 3000');
+    
+    console.log('BOOT: SUCCESS. Server is live and listening.');
   } catch (err) {
-    fastify.log.error(err);
+    console.error('BOOT: FATAL ERROR DURING STARTUP:');
+    console.error(err);
     process.exit(1);
   }
 };
