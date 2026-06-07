@@ -5,13 +5,11 @@
     <title>AUTOLAUNCH // SPATIAL OS</title>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
-    <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
     <style>
         :root { --glow: #00ff41; --bg: #030303; --panel: rgba(15, 15, 15, 0.9); }
         body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
         .grid-layout { display: grid; grid-template-columns: 450px 1fr; grid-template-rows: 1fr 250px; height: 100vh; }
         .sidebar { background: var(--panel); border-right: 1px solid #222; padding: 30px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
-        .viewport { position: relative; border-bottom: 1px solid #222; }
         .console { background: #000; padding: 20px; color: #aaa; font-size: 12px; overflow-y: auto; grid-column: span 2; border-top: 1px solid var(--glow); }
         .card { border: 1px solid #333; padding: 20px; border-radius: 4px; }
         input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
@@ -22,18 +20,19 @@
 <body>
     <div id='wizard' class='setup-wizard'>
         <div style='max-width: 500px;'>
-            <h1 style='letter-spacing: 5px;'>ESTABLISH_LINK</h1>
+            <h1>ESTABLISH_LINK</h1>
             <input type='text' id='vpsIp' placeholder='https://...ngrok-free.dev'>
             <button onclick='syncBackend()'>ESTABLISH_LINK</button>
         </div>
     </div>
-
     <div class='grid-layout'>
         <div class='sidebar'>
             <div>STATUS: <span id='hw-status' style='color:red;'>OFFLINE</span></div>
             <div class='card'>
                 <h3>1. TARGET_REPOSITORY</h3>
                 <input type='text' id='gitUrl' placeholder='https://github.com/user/repo'>
+                <h3>2. GITHUB_PAT (Optional)</h3>
+                <input type='password' id='githubToken' placeholder='ghp_xxxxxxxxxxxx'>
             </div>
             <button id='coldStartBtn' onclick='executeColdStart()'>EXECUTE_COLD_START</button>
             <button style='background:transparent; border:1px solid #333; color:#444; font-size:10px;' onclick='localStorage.clear(); location.reload();'>RESET_ALL</button>
@@ -41,14 +40,12 @@
         <div class='viewport' id='graph'></div>
         <div class='console' id='terminal'>> SYSTEM_READY...</div>
     </div>
-
     <script>
         const log = (m) => {
             const d = document.createElement('div');
             d.innerText = `[${new Date().toLocaleTimeString()}] ${m}`;
             document.getElementById('terminal').prepend(d);
         };
-
         async function checkPulse() {
             const base = localStorage.getItem('at_base');
             if (!base) return;
@@ -58,37 +55,25 @@
                     document.getElementById('hw-status').innerText = 'ONLINE';
                     document.getElementById('hw-status').style.color = '#00ff41';
                     document.getElementById('wizard').style.display = 'none';
-                    log('LINK_ESTABLISHED: SYSTEM_LIVE');
+                    log('LINK_ESTABLISHED');
                 }
-            } catch (e) {
-                log('PULSE_FAILED: BACKEND_UNREACHABLE');
-            }
+            } catch (e) { log('ERR: BACKEND_UNREACHABLE'); }
         }
-
         async function executeColdStart() {
             const base = localStorage.getItem('at_base');
-            const repo = document.getElementById('gitUrl').value.trim();
-            
-            if (!repo) { log('ERR: REPOSITORY_URL_REQUIRED'); return; }
-            
-            log(`INITIATING_COLD_START: ${repo}`);
-            
+            const repo = document.getElementById('gitUrl').value;
+            const token = document.getElementById('githubToken').value;
+            log(`INITIATING: ${repo}`);
             try {
-                const response = await fetch(`${base}/api/launch`, {
+                const res = await fetch(`${base}/api/launch`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'ngrok-skip-browser-warning': 'true'
-                    },
-                    body: JSON.stringify({ cloneCommand: repo })
+                    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                    body: JSON.stringify({ cloneCommand: repo, githubToken: token })
                 });
-                const data = await response.json();
-                log(`ENGINE_RESPONSE: ${data.status || data.error}`);
-            } catch (err) {
-                log(`FATAL_ERROR: ${err.message}`);
-            }
+                const data = await res.json();
+                log(`ENGINE: ${data.status || data.error}`);
+            } catch (err) { log(`FATAL: ${err.message}`); }
         }
-
         function syncBackend() {
             let url = document.getElementById('vpsIp').value.trim();
             if (!url) return;
@@ -96,7 +81,6 @@
             localStorage.setItem('at_base', url);
             checkPulse();
         }
-
         window.onload = checkPulse;
     </script>
 </body>
