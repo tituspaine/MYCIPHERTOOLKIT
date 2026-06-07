@@ -13,6 +13,7 @@
         .project-row { background: var(--panel); border: 1px solid #222; padding: 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #333; }
         input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; font-family: inherit; outline: none; }
         button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; }
+        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; margin-left: 10px; padding: 8px 12px; font-size: 10px; }
         #terminal { flex: 1; padding: 15px; font-size: 11px; color: #666; overflow-y: auto; white-space: pre-wrap; border: 1px solid #111; }
     </style>
 </head>
@@ -39,7 +40,6 @@
     <script>
         const base = localStorage.getItem('at_base');
         const socket = io(base);
-        let pollInterval;
         
         socket.on('build_log', (msg) => {
             const term = document.getElementById('terminal');
@@ -51,19 +51,27 @@
             const repoUrl = document.getElementById('repo').value;
             const githubToken = document.getElementById('token').value;
             if(!repoUrl) { alert('ENTER REPO URL'); return; }
-            try {
-                await fetch(`${base}/api/launch`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                    body: JSON.stringify({ cloneCommand: repoUrl, githubToken: githubToken })
-                });
-            } catch (error) {
-                console.error(error);
-            }
+            
+            document.getElementById('terminal').innerHTML += `\n[UI] SENDING COLD_START TO VPS...`;
+            await fetch(`${base}/api/launch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ cloneCommand: repoUrl, githubToken: githubToken })
+            });
+        }
+
+        async function purge(name) {
+            if(!confirm(`PURGE ${name.toUpperCase()}?`)) return;
+            await fetch(`${base}/api/destroy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ repoName: name })
+            });
+            load();
         }
 
         async function load() {
-            if (document.hidden) return; // DON'T POLL IF TAB IS HIDDEN
+            if (document.hidden) return;
             try {
                 const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
                 const apps = await res.json();
@@ -76,17 +84,17 @@
                     const appUrl = `https://${cleanBase.split(':')[0]}:${app.port}`;
                     row.innerHTML = `
                         <div><b>${app.name.toUpperCase()}</b><br/><small style='opacity:0.5'>PORT: ${app.port || 'DYN'}</small></div>
-                        <button onclick="window.open('${appUrl}', '_blank')">OPEN</button>
+                        <div style='display:flex;'>
+                            <button onclick="window.open('${appUrl}', '_blank')">OPEN</button>
+                            <button class='btn-purge' onclick="purge('${app.name}')">PURGE</button>
+                        </div>
                     `;
                     list.appendChild(row);
                 });
-            } catch(e) {
-                console.log('Server unreachable, slowing poll...');
-            }
+            } catch(e) {}
         }
 
-        // START SMART POLLING
-        pollInterval = setInterval(load, 5000);
+        setInterval(load, 5000);
         load();
     </script>
 </body>
