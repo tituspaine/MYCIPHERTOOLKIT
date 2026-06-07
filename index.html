@@ -2,85 +2,44 @@
 <html lang='en'>
 <head>
     <meta charset='UTF-8'>
-    <title>AUTOLAUNCH // SPATIAL OS</title>
+    <title>MYCIPHER DASHBOARD</title>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <style>
-        :root { --glow: #00ff41; --bg: #030303; }
-        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; }
-        .header { border-bottom: 2px solid #222; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
-        .manifest-container { max-width: 1200px; margin: 0 auto; }
-        .project-row { background: #0a0a0a; border: 1px solid var(--glow); padding: 25px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 0 15px rgba(0,255,65,0.1); }
+        :root { --glow: #00ff41; }
+        body { background: #050505; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 40px; }
+        .header { border-bottom: 2px solid #222; padding-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .project-row { background: #0a0a0a; border: 1px solid #111; padding: 30px; margin-top: 20px; display: flex; align-items: center; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-left: 4px solid var(--glow); }
         .project-info { flex: 1; }
-        .project-name { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
-        .project-meta { font-size: 10px; opacity: 0.5; text-transform: uppercase; }
-        .actions { display: flex; gap: 15px; }
-        .btn-open { background: var(--glow); color: #000; border: none; padding: 15px 30px; font-weight: bold; cursor: pointer; font-family: inherit; font-size: 16px; }
-        .btn-purge { background: transparent; border: 1px solid #ff4444; color: #ff4444; padding: 15px 20px; cursor: pointer; font-family: inherit; font-size: 12px; }
-        .sidebar-simple { background: #080808; border: 1px solid #111; padding: 20px; margin-bottom: 30px; }
-        input { background: #000; border: 1px solid var(--glow); color: var(--glow); padding: 12px; width: 300px; margin-right: 10px; outline: none; }
-        .setup-wizard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 1000; display: flex; align-items: center; justify-content: center; }
-        #terminal { background: #000; padding: 15px; color: #444; font-size: 11px; height: 150px; overflow-y: auto; border: 1px solid #111; margin-top: 50px; }
+        .btn-open { background: var(--glow); color: #000; border: none; padding: 18px 40px; font-weight: bold; cursor: pointer; font-size: 18px; text-transform: uppercase; }
+        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; padding: 18px 20px; margin-left: 10px; cursor: pointer; }
+        .console { background: #000; color: #444; padding: 15px; margin-top: 50px; font-size: 10px; border-top: 1px solid #111; }
+        .setup-wizard { position: fixed; inset: 0; background: #000; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 15px; margin: 10px; width: 300px; }
     </style>
 </head>
 <body>
-    <div id='wizard' class='setup-wizard'>
-        <div style='text-align: center;'>
-            <h1 style='letter-spacing: 5px;'>SYSTEM_AUTH</h1>
-            <input type='text' id='vpsIp' placeholder='Ngrok URL'>
-            <button onclick='syncBackend()' style='background: var(--glow); padding: 15px 30px; border:none; cursor:pointer; font-weight:bold;'>INITIATE_LINK</button>
-        </div>
+    <div id='wizard' class='setup-wizard' style='display:none;'>
+        <h1>SYSTEM_AUTH</h1>
+        <input type='text' id='vpsIp' placeholder='Ngrok URL'>
+        <button onclick='syncBackend()' style='background:var(--glow); padding: 15px 30px; border:none; font-weight:bold;'>INITIATE_LINK</button>
     </div>
 
-    <div class='manifest-container'>
-        <div class='header'>
-            <div>
-                <h1 style='margin:0;'>MYCIPHER_DASHBOARD</h1>
-                <span id='hw-status' style='color:red; font-size:12px;'>OFFLINE</span>
-            </div>
-            <button onclick='localStorage.clear(); location.reload();' style='background:transparent; border:1px solid #333; color:#333; cursor:pointer;'>HARD_RESET</button>
+    <div class='header'>
+        <div>
+            <h1 style='margin:0;'>MYCIPHER_PROJECT_MANIFEST</h1>
+            <div id='hw-status'>Checking Hardware...</div>
         </div>
-
-        <div class='sidebar-simple'>
-            <h3>LAUNCH_NEW_NODE</h3>
-            <input type='text' id='gitUrl' placeholder='GitHub Repo URL'>
-            <input type='password' id='githubToken' placeholder='PAT (token)' style='width:200px;'>
-            <button onclick='executeColdStart()' style='background: var(--glow); padding: 12px 20px; border:none; font-weight:bold; cursor:pointer;'>COLD_START</button>
-        </div>
-
-        <h2>ACTIVE_PROJECTS</h2>
-        <div id='project-list'>
-            <p style='opacity:0.3;'>No active nodes detected. Use Cold Start to deploy.</p>
-        </div>
-
-        <div id='terminal'>> INITIALIZING SYSTEM...</div>
+        <button onclick='localStorage.clear(); location.reload();' style='color:#333; background:none; border:none; cursor:pointer;'>[HARD_RESET]</button>
     </div>
+
+    <div id='project-list' style='margin-top:40px;'>
+        <p style='opacity:0.2;'>Scanning for active hardware nodes...</p>
+    </div>
+
+    <div class='console' id='terminal'>> SYSTEM_BOOT_COMPLETE</div>
 
     <script>
-        function log(m) {
-            const d = document.createElement('div');
-            d.innerText = `> ${m}`;
-            document.getElementById('terminal').prepend(d);
-        }
-
-        function renderProject(name, port) {
-            const base = localStorage.getItem('at_base');
-            const domain = base.replace('https://', '').replace('http://', '').split('/')[0];
-            const appUrl = `${window.location.protocol}//${domain.split(':')[0]}:${port}`;
-            
-            const row = document.createElement('div');
-            row.className = 'project-row';
-            row.innerHTML = `
-                <div class='project-info'>
-                    <div class='project-name'>${name.toUpperCase()}</div>
-                    <div class='project-meta'>Status: Operational | Port: ${port}</div>
-                </div>
-                <div class='actions'>
-                    <button onclick="window.open('${appUrl}', '_blank')" class='btn-open'>OPEN_INTERFACE</button>
-                    <button onclick="destroyProject('${name}')" class='btn-purge'>PURGE</button>
-                </div>
-            `;
-            document.getElementById('project-list').prepend(row);
-        }
+        function log(m) { const d = document.createElement('div'); d.innerText = `> ${m}`; document.getElementById('terminal').prepend(d); }
 
         async function loadExisting() {
             const base = localStorage.getItem('at_base');
@@ -89,12 +48,33 @@
                 const apps = await res.json();
                 const list = document.getElementById('project-list');
                 list.innerHTML = '';
-                if (apps.length === 0) list.innerHTML = '<p opacity:0.3>No nodes active.</p>';
-                apps.forEach(app => { if(app.port) renderProject(app.name, app.port); });
+                
+                if (apps.length === 0) list.innerHTML = '<h3>ZERO_NODES_DETECTED</h3>';
+                
+                apps.forEach(app => {
+                    const domain = base.replace('https://','').replace('http://','').split('/')[0].split(':')[0];
+                    const appUrl = `https://${domain}:${app.port}`;
+                    
+                    const row = document.createElement('div');
+                    row.className = 'project-row';
+                    row.innerHTML = `
+                        <div class='project-info'>
+                            <div style='font-size:10px; opacity:0.5;'>IDENTIFIER</div>
+                            <div style='font-size:24px; font-weight:bold;'>${app.name.toUpperCase()}</div>
+                            <div style='font-size:12px; margin-top:5px;'>PORT: ${app.port} | NODE: PRODUCTION</div>
+                        </div>
+                        <div>
+                            <button onclick="window.open('${appUrl}', '_blank')" class='btn-open'>OPEN_INTERFACE</button>
+                            <button onclick="purge('${app.name}')" class='btn-purge'>PURGE</button>
+                        </div>
+                    `;
+                    list.appendChild(row);
+                });
+                
                 document.getElementById('hw-status').innerText = 'SYSTEM_ONLINE';
                 document.getElementById('hw-status').style.color = '#00ff41';
-                log(`SYNC: ${apps.length} NODES LOADED`);
-            } catch (e) { log('API_FETCH_ERROR'); }
+                log(`MANIFEST_SYNC: ${apps.length} NODES RENDERED`);
+            } catch (e) { log('SYNC_ERROR'); }
         }
 
         function syncBackend() {
@@ -106,12 +86,9 @@
         }
 
         window.onload = () => {
-            const base = localStorage.getItem('at_base');
-            if (base) {
-                document.getElementById('wizard').style.display = 'none';
-                loadExisting();
-            }
-        }
+            if(!localStorage.getItem('at_base')) document.getElementById('wizard').style.display='flex';
+            else loadExisting();
+        };
     </script>
 </body>
 </html>
