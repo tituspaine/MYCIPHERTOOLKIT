@@ -1,29 +1,49 @@
 <!DOCTYPE html>
-<html>
+<html lang='en'>
 <head>
-    <title>AutoLaunch OS</title>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>AutoLaunch | Spatial OS</title>
     <style>
-        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; padding: 50px; }
-        .terminal { border: 1px solid #00ff41; padding: 20px; box-shadow: 0 0 15px #00ff41; }
-        input { background: transparent; border: none; border-bottom: 1px solid #00ff41; color: #00ff41; width: 70%; outline: none; font-size: 1.2em; }
-        button { background: #00ff41; color: black; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; }
-        #logs { margin-top: 20px; color: #888; white-space: pre-wrap; }
+        :root { --glow: #00ff41; --bg: #050505; }
+        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow: hidden; }
+        .header { border-bottom: 2px solid var(--glow); padding: 20px; display: flex; justify-content: space-between; }
+        .container { display: grid; grid-template-columns: 1fr 1fr; height: calc(100vh - 80px); }
+        .input-zone { padding: 40px; border-right: 1px solid #222; }
+        .output-zone { padding: 20px; background: #000; overflow-y: auto; font-size: 0.85rem; }
+        input { background: transparent; border: 1px solid var(--glow); color: var(--glow); padding: 15px; width: 80%; outline: none; box-shadow: 0 0 10px rgba(0,255,65,0.2); }
+        button { background: var(--glow); color: black; border: none; padding: 15px 30px; cursor: pointer; font-weight: bold; margin-left: 10px; }
+        .status-pill { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--glow); font-size: 0.7rem; }
+        .log-entry { margin-bottom: 5px; border-left: 2px solid #333; padding-left: 10px; }
     </style>
 </head>
 <body>
-    <div class='terminal'>
-        <h1>AUTOLAUNCH_SYSTEM_V1.0</h1>
-        <p>ENTER GITHUB CLONE COMMAND:</p>
-        <input type='text' id='gitCmd' placeholder='git clone https://github.com/...'>
-        <button onclick='launch()'>EXECUTE</button>
-        <div id='logs'>SYSTEM IDLE...</div>
+    <div class='header'>
+        <span>AUTOLAUNCH // SPATIAL_HEALTH_OS</span>
+        <span class='status-pill'>SYSTEM_READY</span>
     </div>
-
+    <div class='container'>
+        <div class='input-zone'>
+            <h2>DEPLOY REPOSITORY</h2>
+            <p>PASTE GITHUB CLONE COMMAND BELOW:</p>
+            <input type='text' id='gitCmd' placeholder='git clone https://github.com/...'>
+            <button onclick='launch()'>EXECUTE</button>
+        </div>
+        <div class='output-zone' id='logs'>
+            <div class='log-entry'>> INITIALIZING INTERFACE...</div>
+        </div>
+    </div>
     <script>
+        function log(msg) {
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            document.getElementById('logs').prepend(div);
+        }
+
         async function launch() {
             const cmd = document.getElementById('gitCmd').value;
-            const logDiv = document.getElementById('logs');
-            logDiv.innerText = 'INITIALIZING CLONE SEQUENCE...';
+            log(`CLONE_REQUEST_RECEIVED: ${cmd}`);
             
             try {
                 const response = await fetch('/api/launch', {
@@ -32,9 +52,10 @@
                     body: JSON.stringify({ cloneCommand: cmd })
                 });
                 const data = await response.json();
-                logDiv.innerText = JSON.stringify(data, null, 2);
+                log(`ENGINE_STATUS: ${data.status}`);
+                if(data.endpoint) log(`DEPLOYED_TO: ${data.endpoint}`);
             } catch (err) {
-                logDiv.innerText = 'ERROR: CONNECTION_FAILED';
+                log('FATAL: ENGINE_OFFLINE');
             }
         }
     </script>
