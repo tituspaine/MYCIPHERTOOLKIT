@@ -13,9 +13,12 @@ RUN apt-get update && apt-get install -y \
     && apt-get update && apt-get install -y docker-ce-cli
 
 WORKDIR /usr/src/app
-COPY package*.json ./
+
+# Correct path pointing to the orchestrator subfolder
+COPY orchestrator/package*.json ./
 RUN npm install
+
 COPY . .
 
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "orchestrator/server.js"]
