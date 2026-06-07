@@ -8,45 +8,52 @@ const SimpleGit = require('simple-git');
 
 const docker = new Docker();
 const git = SimpleGit();
-const runningApps = {};
+let currentPort = 4000;
+
+fastify.register(require('@fastify/static'), {
+  root: path.join(__dirname, '../'),
+  prefix: '/',
+});
 
 fastify.post('/api/launch', async (req, res) => {
-    const { cloneCommand, envVars } = req.body;
-    const repoMatch = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/);
-    const repoName = repoMatch[0].split('/').pop().replace('.git', '').toLowerCase();
-    const workDir = path.join(__dirname, 'tmp', repoName);
+  const { cloneCommand, envVars } = req.body;
+  const repoMatch = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/);
+  if (!repoMatch) return { error: 'INVALID_URL' };
 
-    io.emit('logs', `[SYSTEM] DETECTING HARDWARE CAPABILITIES...`);
+  const repoName = repoMatch[0].split('/').pop().replace('.git', '').toLowerCase();
+  const workDir = path.join(__dirname, 'tmp', repoName);
+  const appPort = currentPort++;
+
+  try {
+    io.emit('logs', `[SYSTEM] CLONING: ${repoName}...`);
+    if (fs.existsSync(workDir)) fs.removeSync(workDir);
     await git.clone(repoMatch[0], workDir);
 
-    // Universal Dockerfile with all tools needed for this specific repo
     const dockerfile = getUniversalDockerfile(workDir);
     fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
-    
-    // Live Env Injection
     if (envVars) fs.writeFileSync(path.join(workDir, '.env'), envVars);
 
+    io.emit('logs', `[SYSTEM] BUILDING IMAGE FOR PORT ${appPort}...`);
     const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
     
-    docker.modem.followProgress(buildStream, async (err, output) => {
-        if (err) return io.emit('logs', `[ERROR] BUILD_FAILED: ${err}`);
-        
-        const container = await docker.createContainer({
-            Image: repoName,
-            HostConfig: { 
-                Memory: 512 * 1024 * 1024, // Optimized for any device size
-                PublishAllPorts: true 
-            }
-        });
-        
-        await container.start();
-        const data = await container.inspect();
-        const port = data.NetworkSettings.Ports['3000/tcp']?.[0].HostPort || 'DYNAMIC';
-        
-        io.emit('logs', `[SUCCESS] REPO_LIVE_ON_PORT: ${port}`);
+    docker.modem.followProgress(buildStream, async (err) => {
+      if (err) return io.emit('logs', `[FATAL] BUILD_FAILED: ${err}`);
+      
+      const container = await docker.createContainer({
+        Image: repoName,
+        ExposedPorts: { '3000/tcp': {} },
+        HostConfig: { PortBindings: { '3000/tcp': [{ HostPort: appPort.toString() }] } }
+      });
+
+      await container.start();
+      io.emit('logs', `[SUCCESS] DEPLOYED_LIVE: port ${appPort}`);
+      io.emit('deployed', { name: repoName, port: appPort });
     });
 
-    return { status: 'BUILDING' };
+    return { status: 'INITIALIZED' };
+  } catch (err) {
+    return { error: err.message };
+  }
 });
 
 fastify.listen({ port: 3000, host: '0.0.0.0' });
