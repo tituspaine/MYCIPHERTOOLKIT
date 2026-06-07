@@ -1,62 +1,66 @@
-const fastify = require('fastify')({ logger: true });
-const path = require('path');
-const fs = require('fs-extra');
+const fastify = require('fastify')({ logger: false });
 const Docker = require('dockerode');
-const SimpleGit = require('simple-git');
+const httpProxy = require('http-proxy');
+const git = require('simple-git')();
+const io = require('socket.io')(fastify.server);
 const jwt = require('jsonwebtoken');
-const { generateDockerfile } = require('./engine/docker-gen');
+const fs = require('fs-extra');
+const path = require('path');
 
 const docker = new Docker();
-const git = SimpleGit();
-const SECRET = 'SPATIAL_OS_SECURE_KEY_888';
+const proxy = httpProxy.createProxyServer({});
+const SECRET = 'SPATIAL_OS_888';
+const runningApps = {}; // Map of subdomains to ports
+let nextPort = 4000;
 
-// Basic Memory Store for Demo (Swap for DB in v2)
-const users = { 'admin': 'TRP_SECURE_PASS' };
-let currentPort = 4000;
-
-fastify.register(require('@fastify/static'), {
-  root: path.join(__dirname, '../'),
-  prefix: '/',
-});
-
-fastify.post('/api/login', async (request, reply) => {
-  const { username, password } = request.body;
-  if (users[username] === password) {
-    const token = jwt.sign({ username }, SECRET, { expiresIn: '7d' });
-    return { token };
+// 1. RECURSIVE PROXY ENGINE
+fastify.addHook('onRequest', (request, reply, done) => {
+  const host = request.headers.host;
+  const subdomain = host.split('.')[0];
+  if (runningApps[subdomain]) {
+    proxy.web(request.raw, reply.raw, { target: `http://127.0.0.1:${runningApps[subdomain]}` });
+    return;
   }
-  return reply.status(401).send({ error: 'Auth Failed' });
+  done();
 });
 
-fastify.post('/api/launch', async (request, reply) => {
-  const token = request.headers.authorization?.split(' ')[1];
-  if (!token) return reply.status(401).send({ error: 'Token Required' });
+// 2. LIVE LOG STREAMING
+io.on('connection', (socket) => {
+  socket.on('join-logs', (repo) => socket.join(repo));
+});
 
-  const { cloneCommand } = request.body;
-  const repoMatch = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/);
-  const repoUrl = repoMatch[0];
+fastify.post('/api/launch', async (req, res) => {
+  const { cloneCommand, envVars, usePostgres } = req.body;
+  const repoUrl = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/)[0];
   const repoName = repoUrl.split('/').pop().replace('.git', '').toLowerCase();
   const workDir = path.join(__dirname, 'tmp', repoName);
-  const assignedPort = currentPort++;
+  const appPort = nextPort++;
 
-  try {
-    await git.clone(repoUrl, workDir);
-    generateDockerfile(workDir, 'NODE'); // Heuristic simplified for brevity
-    
-    const stream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
-    await new Promise((resolve) => docker.modem.followProgress(stream, resolve));
+  // Env Injection
+  await fs.ensureDir(workDir);
+  if(envVars) await fs.writeFile(path.join(workDir, '.env'), envVars);
 
-    const container = await docker.createContainer({
-      Image: repoName,
-      ExposedPorts: { '3000/tcp': {} },
-      HostConfig: { PortBindings: { '3000/tcp': [{ HostPort: assignedPort.toString() }] } }
-    });
-
-    await container.start();
-    return { status: 'LIVE', port: assignedPort, url: `http://vps-ip:${assignedPort}` };
-  } catch (err) {
-    return { error: err.message };
+  // Auto-DB Spinup
+  if (usePostgres) {
+    await docker.createContainer({ Image: 'postgres:15', name: `${repoName}-db`, Env: ['POSTGRES_PASSWORD=pass'] }).then(c => c.start());
   }
+
+  // Build logic with log streaming
+  const stream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
+  docker.modem.followProgress(stream, (err, output) => {
+    if(!err) {
+        docker.createContainer({ 
+            Image: repoName, 
+            HostConfig: { PortBindings: { '3000/tcp': [{ HostPort: appPort.toString() }] } } 
+        }).then(c => {
+            c.start();
+            runningApps[repoName] = appPort;
+            io.to(repoName).emit('status', 'LIVE');
+        });
+    }
+  }, (event) => io.to(repoName).emit('log', event.stream));
+
+  return { subdomain: repoName, status: 'BUILDING' };
 });
 
 fastify.listen({ port: 3000, host: '0.0.0.0' });
