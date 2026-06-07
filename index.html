@@ -2,122 +2,81 @@
 <html lang='en'>
 <head>
     <meta charset='UTF-8'>
-    <title>MYCIPHER // PROJECT MANIFEST</title>
+    <title>MYCIPHER // WORKSTATION</title>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <style>
         :root { --glow: #00ff41; }
-        body { background: #050505; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 30px; margin: 0; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 20px; }
-        .launch-panel { background: #0a0a0a; border: 1px solid #222; padding: 25px; margin-top: 25px; display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; align-items: end; }
-        .project-row { background: #080808; border-left: 4px solid var(--glow); padding: 25px; margin-top: 15px; display: flex; justify-content: space-between; align-items: center; border-radius: 2px; }
-        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; font-family: inherit; outline: none; }
-        button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; font-family: inherit; }
-        .btn-purge { background: transparent; border: 1px solid #ff4444; color: #ff4444; padding: 12px; margin-left: 10px; }
-        .setup-wizard { position: fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:1000; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-        .console { margin-top: 40px; color: #444; font-size: 11px; border-top: 1px solid #111; padding-top: 10px; }
+        body { background: #000; color: var(--glow); font-family: 'JetBrains Mono', monospace; padding: 40px; margin: 0; }
+        .header { border-bottom: 2px solid #222; padding-bottom: 20px; display: flex; justify-content: space-between; }
+        .launch-panel { background: #0a0a0a; border: 1px solid #222; padding: 20px; margin: 20px 0; display: flex; gap: 20px; align-items: flex-end; }
+        .project-row { background: #050505; border: 1px solid #111; padding: 20px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 2px solid var(--glow); }
+        input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; outline: none; }
+        button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; }
+        .btn-purge { background: transparent; color: #ff4444; border: 1px solid #ff4444; }
     </style>
 </head>
 <body>
-    <div id='wizard' class='setup-wizard' style='display:none;'>
-        <h1>SYSTEM_AUTH</h1>
-        <input type='text' id='vpsIp' placeholder='Ngrok URL'>
-        <button onclick='syncBackend()'>INITIATE_LINK</button>
-    </div>
-
     <div class='header'>
-        <div>
-            <h1 style='margin:0; letter-spacing:2px;'>MYCIPHER_PROJECT_MANIFEST</h1>
-            <span id='hw-status' style='color:#666; font-size:12px;'>STANDBY</span>
-        </div>
-        <button onclick='localStorage.clear(); location.reload();' style='background:transparent; color:#333; font-size:10px; border:1px solid #333;'>HARD_RESET</button>
+        <h1 style='margin:0;'>PROJ_MANIFEST_V1</h1>
+        <button onclick='localStorage.clear(); location.reload();' style='background:transparent; color:#444; font-size:10px;'>HARD_RESET</button>
     </div>
 
     <div class='launch-panel'>
-        <div style='display:flex; flex-direction:column;'>
-            <label style='font-size:10px; opacity:0.5;'>TARGET_GIT_URL</label>
-            <input type='text' id='gitUrl' placeholder='https://github.com/...'>
-        </div>
-        <div style='display:flex; flex-direction:column;'>
-            <label style='font-size:10px; opacity:0.5;'>AUTH_TOKEN</label>
-            <input type='password' id='githubToken' placeholder='ghp_xxxx'>
-        </div>
-        <button onclick='executeColdStart()'>COLD_START</button>
+        <div><label style='font-size:10px;'>REPOS_URL</label><br/><input type='text' id='git'></div>
+        <div><label style='font-size:10px;'>TOKEN</label><br/><input type='password' id='tok'></div>
+        <button onclick='launch()'>COLD_START</button>
     </div>
 
-    <h3 style='margin-top:40px; opacity:0.5; font-size:12px;'>ACTIVE_HARDWARE_NODES</h3>
     <div id='project-list'></div>
 
-    <div class='console' id='terminal'>> BOOT_COMPLETE</div>
-
     <script>
-        function log(m) { const d = document.createElement('div'); d.innerText = `> ${m}`; document.getElementById('terminal').prepend(d); }
-
-        function renderProject(app) {
-            const base = localStorage.getItem('at_base');
-            const domain = base.replace('https://', '').replace('http://', '').split('/')[0];
-            
-            // FIX: If port is null, attempt to link via the standard Node port 3000 as fallback
-            const displayPort = app.port || '3000';
-            const appUrl = `${window.location.protocol}//${domain.split(':')[0]}:${displayPort}`;
-            
-            const row = document.createElement('div');
-            row.className = 'project-row';
-            row.innerHTML = `
-                <div>
-                    <div style='font-size:10px; opacity:0.5;'>IDENTIFIER</div>
-                    <div style='font-size:24px; font-weight:bold;'>${app.name.toUpperCase()}</div>
-                    <div style='font-size:10px; color:#555;'>PORT: ${displayPort} | STATUS: ACTIVE</div>
-                </div>
-                <div>
-                    <button onclick="window.open('${appUrl}', '_blank')">OPEN_INTERFACE</button>
-                    <button class='btn-purge' onclick="destroyProject('${app.name}')">PURGE</button>
-                </div>
-            `;
-            document.getElementById('project-list').appendChild(row);
+        const base = localStorage.getItem('at_base');
+        if(!base) { 
+            const ip = prompt('Enter Ngrok URL:'); 
+            if(ip) { localStorage.setItem('at_base', ip); location.reload(); }
         }
 
-        async function loadExisting() {
-            const base = localStorage.getItem('at_base');
-            try {
-                const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
-                const apps = await res.json();
-                const list = document.getElementById('project-list');
-                list.innerHTML = '';
-                apps.forEach(app => renderProject(app));
-                document.getElementById('hw-status').innerText = 'SYSTEM_ONLINE';
-                document.getElementById('hw-status').style.color = '#00ff41';
-                log(`MANIFEST_SYNC: ${apps.length} NODES`);
-            } catch (e) { log('API_ERROR'); }
+        async function launch() {
+            const res = await fetch(`${base}/api/launch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ cloneCommand: document.getElementById('git').value, githubToken: document.getElementById('tok').value })
+            });
+            alert('Build Initiated');
+            setTimeout(load, 2000);
         }
 
-        async function executeColdStart() {
-            const base = localStorage.getItem('at_base');
-            const repo = document.getElementById('gitUrl').value;
-            const token = document.getElementById('githubToken').value;
-            log('INITIATING_COLD_START...');
-            try {
-                await fetch(`${base}/api/launch`, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-                    body: JSON.stringify({ cloneCommand: repo, githubToken: token })
-                });
-                setTimeout(loadExisting, 3000);
-            } catch (err) { log('FATAL_LAUNCH_ERROR'); }
+        async function purge(name) {
+            if(!confirm(`Purge ${name}?`)) return;
+            await fetch(`${base}/api/destroy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+                body: JSON.stringify({ repoName: name })
+            });
+            load();
         }
 
-        function syncBackend() {
-            let url = document.getElementById('vpsIp').value.trim();
-            if(!url) return;
-            if(!url.startsWith('http')) url = 'https://' + url;
-            localStorage.setItem('at_base', url);
-            location.reload();
+        async function load() {
+            const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
+            const apps = await res.json();
+            const list = document.getElementById('project-list');
+            list.innerHTML = '';
+            apps.forEach(app => {
+                const row = document.createElement('div');
+                row.className = 'project-row';
+                const cleanBase = base.split('://')[1];
+                const appUrl = `https://${cleanBase.split(':')[0]}:${app.port}`;
+                row.innerHTML = `
+                    <div><b>${app.name.toUpperCase()}</b><br/><small>PORT: ${app.port || 'DYN'}</small></div>
+                    <div>
+                        <button onclick="window.open('${appUrl}', '_blank')">OPEN</button>
+                        <button class='btn-purge' onclick="purge('${app.name}')">PURGE</button>
+                    </div>
+                `;
+                list.appendChild(row);
+            });
         }
-
-        window.onload = () => {
-            const saved = localStorage.getItem('at_base');
-            if(!saved) document.getElementById('wizard').style.display='flex';
-            else loadExisting();
-        };
+        load();
     </script>
 </body>
 </html>
