@@ -8,52 +8,38 @@ const SimpleGit = require('simple-git');
 
 const docker = new Docker();
 const git = SimpleGit();
-let currentPort = 4000;
 
-fastify.register(require('@fastify/static'), {
-  root: path.join(__dirname, '../'),
-  prefix: '/',
-});
+// SELF-HEALING: Restart apps on boot
+async function heal() {
+  const containers = await docker.listContainers({ all: true });
+  for (const c of containers) {
+    if (c.State !== 'running' && c.Names[0].startsWith('/app-')) {
+      const container = docker.getContainer(c.Id);
+      await container.start().catch(() => {});
+    }
+  }
+}
+heal();
+
+fastify.register(require('@fastify/static'), { root: path.join(__dirname, '../'), prefix: '/' });
 
 fastify.post('/api/launch', async (req, res) => {
-  const { cloneCommand, envVars } = req.body;
-  const repoMatch = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/);
-  if (!repoMatch) return { error: 'INVALID_URL' };
-
-  const repoName = repoMatch[0].split('/').pop().replace('.git', '').toLowerCase();
-  const workDir = path.join(__dirname, 'tmp', repoName);
-  const appPort = currentPort++;
-
-  try {
-    io.emit('logs', `[SYSTEM] CLONING: ${repoName}...`);
-    if (fs.existsSync(workDir)) fs.removeSync(workDir);
+    const { cloneCommand, envVars } = req.body;
+    const repoMatch = cloneCommand.match(/https:\/\/github\.com\/[\w-]+\/[\w.-]+/);
+    const repoName = 'app-' + repoMatch[0].split('/').pop().replace('.git', '').toLowerCase();
+    const workDir = path.join(__dirname, 'tmp', repoName);
+    
     await git.clone(repoMatch[0], workDir);
-
-    const dockerfile = getUniversalDockerfile(workDir);
-    fs.writeFileSync(path.join(workDir, 'Dockerfile'), dockerfile);
+    fs.writeFileSync(path.join(workDir, 'Dockerfile'), getUniversalDockerfile(workDir));
     if (envVars) fs.writeFileSync(path.join(workDir, '.env'), envVars);
 
-    io.emit('logs', `[SYSTEM] BUILDING IMAGE FOR PORT ${appPort}...`);
     const buildStream = await docker.buildImage({ context: workDir, src: ['Dockerfile', '.'] }, { t: repoName });
-    
     docker.modem.followProgress(buildStream, async (err) => {
-      if (err) return io.emit('logs', `[FATAL] BUILD_FAILED: ${err}`);
-      
-      const container = await docker.createContainer({
-        Image: repoName,
-        ExposedPorts: { '3000/tcp': {} },
-        HostConfig: { PortBindings: { '3000/tcp': [{ HostPort: appPort.toString() }] } }
-      });
-
-      await container.start();
-      io.emit('logs', `[SUCCESS] DEPLOYED_LIVE: port ${appPort}`);
-      io.emit('deployed', { name: repoName, port: appPort });
+        if (err) return;
+        const container = await docker.createContainer({ Image: repoName, HostConfig: { RestartPolicy: { Name: 'always' }, PublishAllPorts: true } });
+        await container.start();
     });
-
-    return { status: 'INITIALIZED' };
-  } catch (err) {
-    return { error: err.message };
-  }
+    return { status: 'STARTED' };
 });
 
 fastify.listen({ port: 3000, host: '0.0.0.0' });
