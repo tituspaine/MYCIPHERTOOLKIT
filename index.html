@@ -1,76 +1,88 @@
 <!DOCTYPE html>
 <html lang='en'>
 <head>
-    <title>AutoLaunch | Command Center</title>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>AUTOLAUNCH // SPATIAL OS</title>
     <script src='https://cdn.socket.io/4.7.2/socket.io.min.js'></script>
     <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>
     <style>
-        body { background: #050505; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; display: grid; grid-template-columns: 350px 1fr 300px; height: 100vh; }
-        .panel { border: 1px solid #222; padding: 20px; overflow-y: auto; }
-        #canvas-container { background: #000; position: relative; }
-        textarea { background: #000; border: 1px solid #00ff41; color: #00ff41; width: 100%; height: 100px; margin: 10px 0; }
-        .log-line { font-size: 10px; color: #888; border-bottom: 1px solid #111; }
+        :root { --glow: #00ff41; --bg: #030303; }
+        * { box-sizing: border-box; }
+        body { background: var(--bg); color: var(--glow); font-family: 'JetBrains Mono', monospace; margin: 0; overflow-x: hidden; }
+        
+        /* Liquid Grid Layout */
+        .app-shell { display: grid; grid-template-areas: 'input' 'graph' 'logs'; height: 100vh; }
+        @media (min-width: 1024px) {
+            .app-shell { grid-template-areas: 'input graph' 'logs logs'; grid-template-columns: 400px 1fr; grid-template-rows: 1fr 300px; }
+        }
+
+        .panel-input { grid-area: input; border: 1px solid #222; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .panel-graph { grid-area: graph; border: 1px solid #222; min-height: 300px; position: relative; }
+        .panel-logs { grid-area: logs; border-top: 1px solid var(--glow); background: #000; padding: 15px; overflow-y: scroll; }
+
+        input, textarea { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; width: 100%; outline: none; }
+        input:focus { border-color: var(--glow); box-shadow: 0 0 10px rgba(0,255,65,0.1); }
+        button { background: var(--glow); color: black; border: none; padding: 15px; cursor: pointer; font-weight: bold; width: 100%; }
+        button:hover { background: #00cc33; }
     </style>
 </head>
 <body>
-    <div class='panel'>
-        <h3>COMMAND_INPUT</h3>
-        <input type='text' id='git' placeholder='git clone ...' style='width:90%;'>
-        <textarea id='env' placeholder='PASTE .ENV SECRETS HERE'></textarea>
-        <label><input type='checkbox' id='db'> AUTO_PROVISION_POSTGRES</label>
-        <button onclick='launch()' style='width:100%; margin-top:10px; background:#00ff41;'>DEPLOY_NODE</button>
-    </div>
+    <div class='app-shell'>
+        <div class='panel-input'>
+            <h2>DEPLOYMENT_CORE</h2>
+            <input type='text' id='gitUrl' placeholder='GIT CLONE URL'>
+            <textarea id='env' placeholder='PASTE .ENV (KEY=VALUE)' rows='8'></textarea>
+            <button onclick='launch()'>START ENGINE</button>
+            <div id='status' style='margin-top: 20px;'>STATUS: STANDBY</div>
+        </div>
+        
+        <div class='panel-graph' id='graph'></div>
 
-    <div id='canvas-container'>
-        <!-- 3D Node Map Renders Here -->
-    </div>
-
-    <div class='panel'>
-        <h3>LIVE_STREAMS</h3>
-        <div id='logs'></div>
+        <div class='panel-logs' id='terminal'>
+            <div style='color: #888;'>> SYSTEM READY... esperando repositório</div>
+        </div>
     </div>
 
     <script>
-        const socket = io();
-        
-        // 3D Visualizer Logic
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth - 650, window.innerHeight);
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
-        
-        function addNode(name) {
-            const geom = new THREE.SphereGeometry(0.5, 32, 32);
-            const mat = new THREE.MeshBasicMaterial({ color: 0x00ff41, wireframe: true });
-            const node = new THREE.Mesh(geom, mat);
-            node.position.set(Math.random()*5-2.5, Math.random()*5-2.5, Math.random()*5-2.5);
-            scene.add(node);
-        }
-        camera.position.z = 10;
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
-        animate();
+        const ioClient = io();
+        const terminal = document.getElementById('terminal');
+
+        ioClient.on('logs', msg => {
+            const div = document.createElement('div');
+            div.style.borderLeft = '2px solid #222';
+            div.style.paddingLeft = '10px';
+            div.style.marginBottom = '5px';
+            div.innerText = `> ${msg}`;
+            terminal.prepend(div);
+        });
 
         async function launch() {
-            const git = document.getElementById('git').value;
+            const url = document.getElementById('gitUrl').value;
             const env = document.getElementById('env').value;
-            const db = document.getElementById('db').checked;
-            const res = await fetch('/api/launch', {
+            document.getElementById('status').innerText = 'STATUS: ACQUIRING...';
+            
+            await fetch('/api/launch', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ cloneCommand: git, envVars: env, usePostgres: db })
+                body: JSON.stringify({ cloneCommand: url, envVars: env })
             });
-            const data = await res.json();
-            socket.emit('join-logs', data.subdomain);
-            addNode(data.subdomain);
         }
 
-        socket.on('log', (msg) => {
-            const div = document.createElement('div');
-            div.className = 'log-line';
-            div.innerText = msg;
-            document.getElementById('logs').prepend(div);
-        });
+        /* 3D GRAPH VISUALS */
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ alpha: true });
+        document.getElementById('graph').appendChild(renderer.domElement);
+        renderer.setSize(window.innerWidth > 1024 ? window.innerWidth - 400 : window.innerWidth, 500);
+        
+        const light = new THREE.PointLight(0xffffff, 1, 100);
+        light.position.set(10, 10, 10);
+        scene.add(light);
+
+        camera.position.z = 5;
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        animate();
     </script>
 </body>
 </html>
