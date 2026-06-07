@@ -10,8 +10,6 @@
         .hud-status { display: flex; justify-content: space-between; align-items: center; background: #050505; border-bottom: 2px solid #222; padding: 15px 25px; margin: -25px -25px 25px -25px; }
         .pulse-dot { height: 8px; width: 8px; background: var(--glow); border-radius: 50%; display: inline-block; margin-right: 10px; box-shadow: 0 0 10px var(--glow); }
         .main-grid { display: grid; grid-template-columns: 1fr 400px; gap: 20px; flex: 1; overflow: hidden; }
-        #progress-container { height: 2px; width: 100%; background: #111; margin-bottom: 10px; display: none; }
-        #progress-bar { height: 100%; width: 0%; background: var(--glow); transition: width 0.5s ease; }
         .project-row { background: var(--panel); border: 1px solid #222; padding: 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #333; }
         input { background: #000; border: 1px solid #333; color: var(--glow); padding: 12px; font-family: inherit; outline: none; }
         button { background: var(--glow); color: #000; border: none; padding: 12px 25px; font-weight: bold; cursor: pointer; }
@@ -30,8 +28,6 @@
         <button onclick='launch()'>COLD_START</button>
     </div>
 
-    <div id='progress-container'><div id='progress-bar'></div></div>
-
     <div class='main-grid'>
         <div id='project-list'></div>
         <div style='display:flex; flex-direction:column;'>
@@ -43,6 +39,7 @@
     <script>
         const base = localStorage.getItem('at_base');
         const socket = io(base);
+        let pollInterval;
         
         socket.on('build_log', (msg) => {
             const term = document.getElementById('terminal');
@@ -53,27 +50,20 @@
         async function launch() {
             const repoUrl = document.getElementById('repo').value;
             const githubToken = document.getElementById('token').value;
-            
             if(!repoUrl) { alert('ENTER REPO URL'); return; }
-
-            document.getElementById('terminal').innerHTML += `\n[UI] SENDING COLD_START TO ${base}/api/launch`;
-            
             try {
-                const response = await fetch(`${base}/api/launch`, {
+                await fetch(`${base}/api/launch`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
                     body: JSON.stringify({ cloneCommand: repoUrl, githubToken: githubToken })
                 });
-                
-                const data = await response.json();
-                document.getElementById('terminal').innerHTML += `\n[BRAIN_RESPONSE] ${JSON.stringify(data)}`;
             } catch (error) {
-                document.getElementById('terminal').innerHTML += `\n[FATAL_UI_ERROR] ${error.message}`;
-                alert('BROWSER BLOCKED REQUEST: See Brain Stream for details.');
+                console.error(error);
             }
         }
 
         async function load() {
+            if (document.hidden) return; // DON'T POLL IF TAB IS HIDDEN
             try {
                 const res = await fetch(`${base}/api/projects`, { headers: { 'ngrok-skip-browser-warning': 'true' }});
                 const apps = await res.json();
@@ -90,10 +80,13 @@
                     `;
                     list.appendChild(row);
                 });
-            } catch(e) {}
+            } catch(e) {
+                console.log('Server unreachable, slowing poll...');
+            }
         }
 
-        setInterval(load, 5000);
+        // START SMART POLLING
+        pollInterval = setInterval(load, 5000);
         load();
     </script>
 </body>
