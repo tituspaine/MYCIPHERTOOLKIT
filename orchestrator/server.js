@@ -1,23 +1,26 @@
 const fastify = require('fastify')({ logger: true });
 const Docker = require('dockerode');
-const fs = require('fs-extra');
-const path = require('path');
 
-// Add CORS support to allow the Cloudflare UI to connect
 fastify.register(require('@fastify/cors'), {
-  origin: '*'
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS']
 });
 
 const docker = new Docker();
 
-// Root Health Check
 fastify.get('/', async () => {
-  return { status: 'ONLINE', platform: 'MYCIPHER_AUTOLAUNCH' };
+  return { status: 'ONLINE', version: '1.2.0' };
 });
 
-fastify.post('/api/launch', async (req, res) => {
-  // ... existing launch logic ...
-  return { status: 'RECEIVED' };
-});
+// Start the server - Explicitly binding to 0.0.0.0
+const start = async () => {
+  try {
+    await fastify.listen({ port: 3000, host: '0.0.0.0' });
+    console.log('Orchestrator live on 0.0.0.0:3000');
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
 
-fastify.listen({ port: 3000, host: '0.0.0.0' });
+start();
