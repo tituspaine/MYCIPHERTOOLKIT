@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  autolaunch-core:
+    build: .
+    container_name: autolaunch_engine
+    ports:
+      - "3000:3000"
+      - "4000-4100:4000-4100" # Reserved range for launched apps
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # Allows platform to spawn containers
+      - ./storage:/usr/src/app/orchestrator/tmp      # Persistent storage for repos
+    environment:
+      - NODE_ENV=production
+      - PLAT_SECRET=SPATIAL_OS_888
+    restart: always
+
+networks:
+  default:
+    name: autolaunch_network
